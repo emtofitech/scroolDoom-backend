@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI}
+
+firebase:
+  credentials:
+    path: ${FIREBASE_CREDENTIALS_PATH}
+
+api:
+  base-path: /api/v1
