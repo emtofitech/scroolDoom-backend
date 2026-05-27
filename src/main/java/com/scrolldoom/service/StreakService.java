@@ -43,6 +43,9 @@ public class StreakService {
                 .existsByUserIdAndBreachedAtBetween(userId, toDateStart(yesterday), toDateEnd(yesterday));
 
         if (hadBreachYesterday) {
+            if (streak.getCurrentStreak() > streak.getLongestStreak()) {
+                streak.setLongestStreak(streak.getCurrentStreak());
+            }
             streak.setCurrentStreak(0);
         } else {
             int consecutiveDays = countConsecutiveCleanDays(userId, yesterday, streak.getLastSuccessDate());
