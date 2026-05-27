@@ -1,7 +1,10 @@
 package com.scrolldoom.controller;
 
+import com.scrolldoom.dto.LoginRequest;
 import com.scrolldoom.dto.RegisterRequest;
+import com.scrolldoom.dto.SessionResponse;
 import com.scrolldoom.dto.UserResponse;
+import com.scrolldoom.service.SessionService;
 import com.scrolldoom.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -10,6 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,13 +24,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/auth")
-@Tag(name = "Auth", description = "Public authentication endpoints (no JWT required)")
+@Tag(name = "Auth", description = "Authentication and session management endpoints")
 public class AuthController {
 
     private final UserService userService;
+    private final SessionService sessionService;
 
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, SessionService sessionService) {
         this.userService = userService;
+        this.sessionService = sessionService;
     }
 
     @PostMapping("/register")
@@ -50,5 +56,27 @@ public class AuthController {
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(userService.registerUser(req));
+    }
+
+    @PostMapping("/login")
+    @Operation(summary = "Create a session",
+            description = "Creates a new session for the authenticated user. "
+                    + "The Firebase ID token must be provided in the Authorization header. "
+                    + "Returns session details including session ID for future management.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Session created successfully",
+                    content = @Content(schema = @Schema(implementation = SessionResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Invalid or missing Firebase token")
+    })
+    public ResponseEntity<SessionResponse> login(@RequestBody(required = false) LoginRequest req,
+                                                  HttpServletRequest request) {
+        String firebaseUid = UserService.getCurrentFirebaseUid();
+        String deviceInfo = req != null ? req.getDeviceInfo() : request.getHeader("User-Agent");
+        String fcmToken = req != null ? req.getFcmToken() : null;
+        boolean rememberMe = req != null && req.isRememberMe();
+        String ipAddress = request.getRemoteAddr();
+
+        SessionResponse session = sessionService.createSession(firebaseUid, deviceInfo, ipAddress, fcmToken, rememberMe);
+        return ResponseEntity.status(HttpStatus.CREATED).body(session);
     }
 }
