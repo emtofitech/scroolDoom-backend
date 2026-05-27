@@ -4,6 +4,8 @@ import com.google.auth.oauth2.GoogleCredentials;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
@@ -15,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 @Configuration
 @Profile("!test")
 public class FirebaseConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(FirebaseConfig.class);
 
     @PostConstruct
     public void initialize() {
@@ -31,8 +35,8 @@ public class FirebaseConfig {
                 } else if (credentialsPath != null && !credentialsPath.isBlank()) {
                     credentials = GoogleCredentials.fromStream(new FileInputStream(credentialsPath));
                 } else {
-                    throw new IllegalStateException(
-                            "Set FIREBASE_CREDENTIALS_JSON (raw JSON) or FIREBASE_CREDENTIALS_PATH (file path)");
+                    log.warn("No Firebase credentials found. Firebase auth disabled. Set FIREBASE_CREDENTIALS_JSON or FIREBASE_CREDENTIALS_PATH to enable.");
+                    return;
                 }
 
                 FirebaseOptions options = FirebaseOptions.builder()
@@ -40,6 +44,7 @@ public class FirebaseConfig {
                         .build();
 
                 FirebaseApp.initializeApp(options);
+                log.info("Firebase initialized successfully");
             } catch (IOException e) {
                 throw new IllegalStateException("Failed to initialize Firebase: " + e.getMessage(), e);
             }
