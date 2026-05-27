@@ -10,6 +10,8 @@ import com.scrolldoom.repository.BreachEventRepository;
 import com.scrolldoom.repository.PartnershipRepository;
 import com.scrolldoom.repository.UserRepository;
 import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.Calendar;
@@ -19,6 +21,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class BreachService {
+
+    private static final Logger log = LoggerFactory.getLogger(BreachService.class);
 
     private final BreachEventRepository breachEventRepository;
     private final PartnershipRepository partnershipRepository;
@@ -222,7 +226,20 @@ public class BreachService {
         }
 
         try {
-            String partnerFcmToken = partnershipService.getPartnerFcmToken(breach.getPartnershipId(), userId);
+            Partnership partnership = partnershipRepository.findById(breach.getPartnershipId())
+                    .orElse(null);
+            if (partnership == null) return;
+
+            ObjectId partnerId = partnership.getSenderUserId().equals(userId)
+                    ? partnership.getReceiverUserId()
+                    : partnership.getSenderUserId();
+
+            User partner = userRepository.findById(partnerId).orElse(null);
+            if (partner == null) return;
+
+            String partnerFcmToken = partner.getFcmToken();
+            if (partnerFcmToken == null || partnerFcmToken.isBlank()) return;
+
             User currentUser = userRepository.findById(userId)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
@@ -247,12 +264,12 @@ public class BreachService {
                     break;
             }
 
-            notificationService.sendBreachNotification(partnerFcmToken, title, body);
+            notificationService.sendBreachNotification(partnerFcmToken, partner.getFirebaseUid(), title, body);
 
             breach.setPartnerNotified(true);
             breachEventRepository.save(breach);
         } catch (Exception e) {
-            // Notification failure must not break the response
+            log.error("Failed to notify partner for breach {}: {}", breach.getId(), e.getMessage(), e);
         }
     }
 

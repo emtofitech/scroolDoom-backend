@@ -3,6 +3,7 @@ package com.scrolldoom.filter;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseToken;
+import com.scrolldoom.service.JwtService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,6 +19,12 @@ import java.io.IOException;
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
+    private final JwtService jwtService;
+
+    public JwtAuthFilter(JwtService jwtService) {
+        this.jwtService = jwtService;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
@@ -30,28 +37,37 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (FirebaseApp.getApps().isEmpty()) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
         String token = authHeader.substring(7);
 
-        try {
-            FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(token);
+        if (!FirebaseApp.getApps().isEmpty()) {
+            try {
+                FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(token);
+                Authentication authentication = new UsernamePasswordAuthenticationToken(
+                        decodedToken.getUid(),
+                        token,
+                        null
+                );
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+                filterChain.doFilter(request, response);
+                return;
+            } catch (Exception ignored) {
+            }
+        }
+
+        if (jwtService.isTokenValid(token)) {
+            String firebaseUid = jwtService.extractFirebaseUid(token);
             Authentication authentication = new UsernamePasswordAuthenticationToken(
-                    decodedToken.getUid(),
+                    firebaseUid,
                     token,
                     null
             );
             SecurityContextHolder.getContext().setAuthentication(authentication);
-        } catch (Exception e) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"error\": \"Invalid or expired token\"}");
+            filterChain.doFilter(request, response);
             return;
         }
 
-        filterChain.doFilter(request, response);
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"error\": \"Invalid or expired token\"}");
     }
 }

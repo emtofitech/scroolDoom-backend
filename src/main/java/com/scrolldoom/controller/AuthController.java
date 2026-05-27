@@ -1,6 +1,8 @@
 package com.scrolldoom.controller;
 
 import com.scrolldoom.dto.LoginRequest;
+import com.scrolldoom.dto.LoginWithPasswordRequest;
+import com.scrolldoom.dto.LoginWithPasswordResponse;
 import com.scrolldoom.dto.RegisterRequest;
 import com.scrolldoom.dto.SessionResponse;
 import com.scrolldoom.dto.UserResponse;
@@ -78,5 +80,18 @@ public class AuthController {
 
         SessionResponse session = sessionService.createSession(firebaseUid, deviceInfo, ipAddress, fcmToken, rememberMe);
         return ResponseEntity.status(HttpStatus.CREATED).body(session);
+    }
+
+    @PostMapping("/login-with-password")
+    @Operation(summary = "Login with email and password",
+            description = "Authenticates a user with email and password, returns a JWT token.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Login successful",
+                    content = @Content(schema = @Schema(implementation = LoginWithPasswordResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Invalid credentials")
+    })
+    public ResponseEntity<LoginWithPasswordResponse> loginWithPassword(@Valid @RequestBody LoginWithPasswordRequest req) {
+        LoginWithPasswordResponse response = userService.loginWithPassword(req.getEmail(), req.getPassword());
+        return ResponseEntity.ok(response);
     }
 }

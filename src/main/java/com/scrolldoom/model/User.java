@@ -31,6 +31,8 @@ public class User {
 
     private String fcmToken;
 
+    private String password;
+
     private String avatarUrl;
 
     private Date createdAt;

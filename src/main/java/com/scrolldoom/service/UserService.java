@@ -1,5 +1,6 @@
 package com.scrolldoom.service;
 
+import com.scrolldoom.dto.LoginWithPasswordResponse;
 import com.scrolldoom.dto.RegisterRequest;
 import com.scrolldoom.dto.UserResponse;
 import com.scrolldoom.exception.ResourceNotFoundException;
@@ -8,6 +9,7 @@ import com.scrolldoom.repository.UserRepository;
 import org.bson.types.ObjectId;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -16,9 +18,13 @@ import java.util.Date;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final BCryptPasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, JwtService jwtService) {
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     public UserResponse registerUser(RegisterRequest req) {
@@ -32,10 +38,44 @@ public class UserService {
                 .displayName(req.getDisplayName())
                 .email(req.getEmail())
                 .fcmToken(req.getFcmToken())
+                .password(req.getPassword() != null ? passwordEncoder.encode(req.getPassword()) : null)
                 .createdAt(new Date())
                 .lastActiveAt(new Date())
                 .build();
 
+        return mapToResponse(userRepository.save(user));
+    }
+
+    public LoginWithPasswordResponse loginWithPassword(String email, String password) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (user.getPassword() == null || !passwordEncoder.matches(password, user.getPassword())) {
+            throw new ResourceNotFoundException("Invalid credentials");
+        }
+
+        user.setLastActiveAt(new Date());
+        userRepository.save(user);
+
+        String token = jwtService.generateToken(user.getFirebaseUid(), user.getEmail());
+
+        return LoginWithPasswordResponse.builder()
+                .token(token)
+                .firebaseUid(user.getFirebaseUid())
+                .email(user.getEmail())
+                .displayName(user.getDisplayName())
+                .build();
+    }
+
+    public UserResponse verifyPassword(String email, String password) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (user.getPassword() == null || !passwordEncoder.matches(password, user.getPassword())) {
+            throw new ResourceNotFoundException("Invalid credentials");
+        }
+
+        user.setLastActiveAt(new Date());
         return mapToResponse(userRepository.save(user));
     }
 

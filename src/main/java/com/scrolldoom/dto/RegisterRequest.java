@@ -24,4 +24,7 @@ public class RegisterRequest {
 
     @Schema(description = "FCM device token for push notifications (optional on register)", example = "fcm-device-token", nullable = true)
     private String fcmToken;
+
+    @Schema(description = "Password for email/password authentication (optional if using Firebase)", example = "securePassword123", nullable = true)
+    private String password;
 }
