@@ -1,6 +1,7 @@
 package com.scrolldoom.service;
 
 import com.scrolldoom.dto.StreakResponse;
+import com.scrolldoom.model.BreachEvent;
 import com.scrolldoom.model.Streak;
 import com.scrolldoom.repository.BreachEventRepository;
 import com.scrolldoom.repository.StreakRepository;
@@ -11,6 +12,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class StreakService {
@@ -34,29 +38,49 @@ public class StreakService {
         }
 
         LocalDate yesterday = today.minusDays(1);
-        Date yesterdayStart = toDateStart(yesterday);
-        Date yesterdayEnd = toDateEnd(yesterday);
 
         boolean hadBreachYesterday = breachEventRepository
-                .existsByUserIdAndBreachedAtBetween(userId, yesterdayStart, yesterdayEnd);
+                .existsByUserIdAndBreachedAtBetween(userId, toDateStart(yesterday), toDateEnd(yesterday));
 
-        if (!hadBreachYesterday) {
-            LocalDate dayBeforeYesterday = yesterday.minusDays(1);
-            if (dayBeforeYesterday.equals(streak.getLastSuccessDate())) {
-                streak.setCurrentStreak(streak.getCurrentStreak() + 1);
-            } else {
-                streak.setCurrentStreak(1);
-            }
-            streak.setLastSuccessDate(yesterday);
-            if (streak.getCurrentStreak() > streak.getLongestStreak()) {
-                streak.setLongestStreak(streak.getCurrentStreak());
-            }
-        } else {
+        if (hadBreachYesterday) {
             streak.setCurrentStreak(0);
+        } else {
+            int consecutiveDays = countConsecutiveCleanDays(userId, yesterday, streak.getLastSuccessDate());
+            streak.setCurrentStreak(consecutiveDays);
+            streak.setLastSuccessDate(yesterday);
+            if (consecutiveDays > streak.getLongestStreak()) {
+                streak.setLongestStreak(consecutiveDays);
+            }
         }
 
         streak.setUpdatedAt(new Date());
         return mapToResponse(streakRepository.save(streak));
+    }
+
+    private int countConsecutiveCleanDays(ObjectId userId, LocalDate fromDate, LocalDate lastSuccessDate) {
+        if (lastSuccessDate != null && lastSuccessDate.equals(fromDate)) {
+            return 1;
+        }
+
+        LocalDate searchFrom = (lastSuccessDate != null && lastSuccessDate.isBefore(fromDate))
+                ? lastSuccessDate.plusDays(1)
+                : fromDate.minusDays(30);
+
+        List<BreachEvent> breaches = breachEventRepository.findByUserIdAndBreachedAtBetween(
+                userId, toDateStart(searchFrom), toDateEnd(fromDate));
+
+        Set<LocalDate> breachDates = breaches.stream()
+                .map(b -> b.getBreachedAt().toInstant().atZone(ZoneId.systemDefault()).toLocalDate())
+                .collect(Collectors.toSet());
+
+        int count = 0;
+        LocalDate day = fromDate;
+        while (!day.isBefore(searchFrom) && !breachDates.contains(day)) {
+            count++;
+            day = day.minusDays(1);
+        }
+
+        return count;
     }
 
     private boolean isSameDay(Date date, LocalDate localDate) {

@@ -41,4 +41,6 @@ public interface BreachEventRepository extends MongoRepository<BreachEvent, Obje
     long countByAcknowledged(boolean acknowledged);
 
     long countByBreachedAtBetween(Date start, Date end);
+
+    List<BreachEvent> findByUserIdAndBreachedAtBetween(ObjectId userId, Date start, Date end);
 }
