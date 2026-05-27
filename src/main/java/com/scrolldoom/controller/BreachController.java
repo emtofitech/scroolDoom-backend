@@ -16,15 +16,11 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.Data;
 import org.bson.types.ObjectId;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -156,18 +152,22 @@ public class BreachController {
     }
 
     @GetMapping("/partner")
-    @Operation(summary = "Get partner's breaches",
-            description = "Returns all breach events for the current user's partner. "
-                    + "Throws 404 if the user has no active partnership.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "List of partner's breach events",
-                    content = @Content(schema = @Schema(implementation = BreachEventResponse.class))),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
-            @ApiResponse(responseCode = "404", description = "No active partnership")
-    })
-    public ResponseEntity<List<BreachEventResponse>> getPartnerBreaches() {
-        ObjectId userId = userService.getCurrentUserId();
-        return ResponseEntity.ok(breachService.getPartnerBreaches(userId));
+    public ResponseEntity<Page<BreachEventResponse>> getPartnerBreaches(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Boolean acknowledged) {
+        org.bson.types.ObjectId userId = userService.getCurrentUserId();
+        return ResponseEntity.ok(breachService.getPartnerBreaches(userId, acknowledged, PageRequest.of(page, size)));
+    }
+
+    @GetMapping("/partner/type/{breachType}")
+    public ResponseEntity<Page<BreachEventResponse>> getPartnerBreachesByType(
+            @PathVariable String breachType,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Boolean acknowledged) {
+        org.bson.types.ObjectId userId = userService.getCurrentUserId();
+        return ResponseEntity.ok(breachService.getPartnerBreachesByType(userId, breachType, acknowledged, PageRequest.of(page, size)));
     }
 
     private BreachEventResponse mapToResponse(BreachEvent breach) {

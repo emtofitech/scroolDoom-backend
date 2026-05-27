@@ -12,6 +12,8 @@ import com.scrolldoom.repository.UserRepository;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.Calendar;
@@ -194,6 +196,46 @@ public class BreachService {
                 .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
+    }
+
+    public Page<BreachEventResponse> getPartnerBreaches(ObjectId userId, Pageable pageable) {
+        ObjectId partnerId = resolvePartnerId(userId);
+        return breachEventRepository.findByUserIdOrderByBreachedAtDesc(partnerId, pageable)
+                .map(this::mapToResponse);
+    }
+
+    public Page<BreachEventResponse> getPartnerBreaches(ObjectId userId, Boolean acknowledged, Pageable pageable) {
+        ObjectId partnerId = resolvePartnerId(userId);
+        if (acknowledged != null) {
+            return breachEventRepository.findByUserIdAndAcknowledgedOrderByBreachedAtDesc(partnerId, acknowledged, pageable)
+                    .map(this::mapToResponse);
+        }
+        return breachEventRepository.findByUserIdOrderByBreachedAtDesc(partnerId, pageable)
+                .map(this::mapToResponse);
+    }
+
+    public Page<BreachEventResponse> getPartnerBreachesByType(ObjectId userId, String breachType, Pageable pageable) {
+        ObjectId partnerId = resolvePartnerId(userId);
+        return breachEventRepository.findByUserIdAndBreachTypeOrderByBreachedAtDesc(partnerId, breachType, pageable)
+                .map(this::mapToResponse);
+    }
+
+    public Page<BreachEventResponse> getPartnerBreachesByType(ObjectId userId, String breachType, Boolean acknowledged, Pageable pageable) {
+        ObjectId partnerId = resolvePartnerId(userId);
+        if (acknowledged != null) {
+            return breachEventRepository.findByUserIdAndBreachTypeAndAcknowledgedOrderByBreachedAtDesc(partnerId, breachType, acknowledged, pageable)
+                    .map(this::mapToResponse);
+        }
+        return breachEventRepository.findByUserIdAndBreachTypeOrderByBreachedAtDesc(partnerId, breachType, pageable)
+                .map(this::mapToResponse);
+    }
+
+    private ObjectId resolvePartnerId(ObjectId userId) {
+        Partnership partnership = partnershipRepository.findActivePartnership(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("No active partnership"));
+        return partnership.getSenderUserId().equals(userId)
+                ? partnership.getReceiverUserId()
+                : partnership.getSenderUserId();
     }
 
     public BreachEvent acknowledgeBreach(ObjectId breachId, ObjectId userId) {
