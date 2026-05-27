@@ -3,9 +3,6 @@ package com.scrolldoom.controller;
 import com.scrolldoom.dto.AppLimitResponse;
 import com.scrolldoom.dto.CreateLimitRequest;
 import com.scrolldoom.dto.UpdateLimitRequest;
-import com.scrolldoom.exception.ResourceNotFoundException;
-import com.scrolldoom.model.User;
-import com.scrolldoom.repository.UserRepository;
 import com.scrolldoom.service.AppLimitService;
 import com.scrolldoom.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,11 +35,11 @@ import java.util.List;
 public class LimitController {
 
     private final AppLimitService appLimitService;
-    private final UserRepository userRepository;
+    private final UserService userService;
 
-    public LimitController(AppLimitService appLimitService, UserRepository userRepository) {
+    public LimitController(AppLimitService appLimitService, UserService userService) {
         this.appLimitService = appLimitService;
-        this.userRepository = userRepository;
+        this.userService = userService;
     }
 
     @GetMapping
@@ -62,7 +59,7 @@ public class LimitController {
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
     })
     public ResponseEntity<List<AppLimitResponse>> getAllLimits() {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(appLimitService.getLimits(userId));
     }
 
@@ -86,7 +83,7 @@ public class LimitController {
             @ApiResponse(responseCode = "409", description = "Limit already exists for this app")
     })
     public ResponseEntity<AppLimitResponse> createLimit(@Valid @RequestBody CreateLimitRequest req) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(appLimitService.createLimit(userId, req));
     }
@@ -113,7 +110,7 @@ public class LimitController {
     })
     public ResponseEntity<AppLimitResponse> updateLimit(@PathVariable String id,
                                                         @Valid @RequestBody UpdateLimitRequest req) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(appLimitService.updateLimit(userId, id, req));
     }
 
@@ -128,15 +125,8 @@ public class LimitController {
             @ApiResponse(responseCode = "404", description = "App limit not found")
     })
     public ResponseEntity<Void> deleteLimit(@PathVariable String id) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         appLimitService.deleteLimit(userId, id);
         return ResponseEntity.noContent().build();
-    }
-
-    private ObjectId resolveCurrentUserId() {
-        String firebaseUid = UserService.getCurrentFirebaseUid();
-        User user = userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return user.getId();
     }
 }

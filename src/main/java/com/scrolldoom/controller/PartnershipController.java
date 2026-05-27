@@ -2,9 +2,6 @@ package com.scrolldoom.controller;
 
 import com.scrolldoom.dto.AcceptInviteRequest;
 import com.scrolldoom.dto.PartnershipResponse;
-import com.scrolldoom.exception.ResourceNotFoundException;
-import com.scrolldoom.model.User;
-import com.scrolldoom.repository.UserRepository;
 import com.scrolldoom.service.PartnershipService;
 import com.scrolldoom.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,12 +31,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class PartnershipController {
 
     private final PartnershipService partnershipService;
-    private final UserRepository userRepository;
+    private final UserService userService;
 
     public PartnershipController(PartnershipService partnershipService,
-                                 UserRepository userRepository) {
+                                 UserService userService) {
         this.partnershipService = partnershipService;
-        this.userRepository = userRepository;
+        this.userService = userService;
     }
 
     @PostMapping("/invite")
@@ -61,7 +58,7 @@ public class PartnershipController {
             @ApiResponse(responseCode = "409", description = "User already has an active partnership or pending invite")
     })
     public ResponseEntity<PartnershipResponse> generateInvite() {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(partnershipService.generateInvite(userId));
     }
@@ -97,7 +94,7 @@ public class PartnershipController {
     })
     public ResponseEntity<PartnershipResponse> acceptInvite(
             @Valid @RequestBody AcceptInviteRequest req) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(partnershipService.acceptInvite(userId, req.getInviteCode()));
     }
 
@@ -112,7 +109,7 @@ public class PartnershipController {
             @ApiResponse(responseCode = "404", description = "No active partnership found")
     })
     public ResponseEntity<PartnershipResponse> getActivePartnership() {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(partnershipService.getActivePartnership(userId));
     }
 
@@ -128,15 +125,8 @@ public class PartnershipController {
             @ApiResponse(responseCode = "404", description = "Partnership not found")
     })
     public ResponseEntity<Void> dissolvePartnership(@PathVariable String id) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         partnershipService.dissolvePartnership(userId, id);
         return ResponseEntity.noContent().build();
-    }
-
-    private ObjectId resolveCurrentUserId() {
-        String firebaseUid = UserService.getCurrentFirebaseUid();
-        User user = userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return user.getId();
     }
 }

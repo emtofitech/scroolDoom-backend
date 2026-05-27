@@ -5,6 +5,7 @@ import com.scrolldoom.dto.UserResponse;
 import com.scrolldoom.exception.ResourceNotFoundException;
 import com.scrolldoom.model.User;
 import com.scrolldoom.repository.UserRepository;
+import org.bson.types.ObjectId;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -60,6 +61,13 @@ public class UserService {
             throw new ResourceNotFoundException("User not found");
         }
         return (String) auth.getPrincipal();
+    }
+
+    public ObjectId getCurrentUserId() {
+        String firebaseUid = getCurrentFirebaseUid();
+        User user = userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return user.getId();
     }
 
     private UserResponse mapToResponse(User user) {

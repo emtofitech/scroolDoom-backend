@@ -3,9 +3,7 @@ package com.scrolldoom.controller;
 import com.scrolldoom.dto.StreakResponse;
 import com.scrolldoom.exception.ResourceNotFoundException;
 import com.scrolldoom.model.Partnership;
-import com.scrolldoom.model.User;
 import com.scrolldoom.repository.PartnershipRepository;
-import com.scrolldoom.repository.UserRepository;
 import com.scrolldoom.service.StreakService;
 import com.scrolldoom.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,14 +27,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class StreakController {
 
     private final StreakService streakService;
-    private final UserRepository userRepository;
+    private final UserService userService;
     private final PartnershipRepository partnershipRepository;
 
     public StreakController(StreakService streakService,
-                            UserRepository userRepository,
+                            UserService userService,
                             PartnershipRepository partnershipRepository) {
         this.streakService = streakService;
-        this.userRepository = userRepository;
+        this.userService = userService;
         this.partnershipRepository = partnershipRepository;
     }
 
@@ -59,7 +57,7 @@ public class StreakController {
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
     })
     public ResponseEntity<StreakResponse> getMyStreak() {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(streakService.getOrCalculateStreak(userId));
     }
 
@@ -75,19 +73,12 @@ public class StreakController {
             @ApiResponse(responseCode = "404", description = "No active partnership")
     })
     public ResponseEntity<StreakResponse> getPartnerStreak() {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         Partnership partnership = partnershipRepository.findActivePartnership(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("No active partnership"));
         ObjectId partnerId = partnership.getSenderUserId().equals(userId)
                 ? partnership.getReceiverUserId()
                 : partnership.getSenderUserId();
         return ResponseEntity.ok(streakService.getOrCalculateStreak(partnerId));
-    }
-
-    private ObjectId resolveCurrentUserId() {
-        String firebaseUid = UserService.getCurrentFirebaseUid();
-        User user = userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return user.getId();
     }
 }

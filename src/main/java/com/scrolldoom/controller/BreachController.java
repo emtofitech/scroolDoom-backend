@@ -2,10 +2,7 @@ package com.scrolldoom.controller;
 
 import com.scrolldoom.dto.BreachEventResponse;
 import com.scrolldoom.dto.CreateBreachRequest;
-import com.scrolldoom.exception.ResourceNotFoundException;
 import com.scrolldoom.model.BreachEvent;
-import com.scrolldoom.model.User;
-import com.scrolldoom.repository.UserRepository;
 import com.scrolldoom.service.BreachService;
 import com.scrolldoom.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,11 +35,11 @@ import java.util.List;
 public class BreachController {
 
     private final BreachService breachService;
-    private final UserRepository userRepository;
+    private final UserService userService;
 
-    public BreachController(BreachService breachService, UserRepository userRepository) {
+    public BreachController(BreachService breachService, UserService userService) {
         this.breachService = breachService;
-        this.userRepository = userRepository;
+        this.userService = userService;
     }
 
     @PostMapping("/screen-time")
@@ -57,7 +54,7 @@ public class BreachController {
     })
     public ResponseEntity<BreachEventResponse> reportScreenTimeBreach(
             @Valid @RequestBody CreateBreachRequest req) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(breachService.reportBreach(userId, req));
     }
@@ -84,7 +81,7 @@ public class BreachController {
                                       "missedDays": 3
                                     }""")))
             @Valid @RequestBody StreakBreachRequest req) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         BreachEvent breach = breachService.reportStreakBroken(userId, req.getStreakName(), req.getMissedDays());
         return ResponseEntity.status(HttpStatus.CREATED).body(mapToResponse(breach));
     }
@@ -111,7 +108,7 @@ public class BreachController {
                                       "appLabel": "Instagram"
                                     }""")))
             @Valid @RequestBody BlockedAppBreachRequest req) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         BreachEvent breach = breachService.reportBlockedAppOpened(userId, req.getPackageName(), req.getAppLabel());
         return ResponseEntity.status(HttpStatus.CREATED).body(mapToResponse(breach));
     }
@@ -125,7 +122,7 @@ public class BreachController {
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
     })
     public ResponseEntity<List<BreachEventResponse>> getMyBreaches() {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(breachService.getMyBreaches(userId));
     }
 
@@ -139,7 +136,7 @@ public class BreachController {
     })
     public ResponseEntity<List<BreachEventResponse>> getMyBreachesByType(
             @PathVariable String breachType) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(breachService.getMyBreachesByType(userId, breachType));
     }
 
@@ -153,7 +150,7 @@ public class BreachController {
             @ApiResponse(responseCode = "404", description = "Breach not found")
     })
     public ResponseEntity<BreachEventResponse> acknowledgeBreach(@PathVariable String breachId) {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         BreachEvent breach = breachService.acknowledgeBreach(new ObjectId(breachId), userId);
         return ResponseEntity.ok(mapToResponse(breach));
     }
@@ -169,15 +166,8 @@ public class BreachController {
             @ApiResponse(responseCode = "404", description = "No active partnership")
     })
     public ResponseEntity<List<BreachEventResponse>> getPartnerBreaches() {
-        ObjectId userId = resolveCurrentUserId();
+        ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(breachService.getPartnerBreaches(userId));
-    }
-
-    private ObjectId resolveCurrentUserId() {
-        String firebaseUid = UserService.getCurrentFirebaseUid();
-        User user = userRepository.findByFirebaseUid(firebaseUid)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return user.getId();
     }
 
     private BreachEventResponse mapToResponse(BreachEvent breach) {
