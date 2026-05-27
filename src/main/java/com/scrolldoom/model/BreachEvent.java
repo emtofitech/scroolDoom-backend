@@ -18,6 +18,10 @@ import java.util.Date;
 @Document(collection = "breachEvents")
 public class BreachEvent {
 
+    public static final String BREACH_SCREEN_TIME = "SCREEN_TIME_EXCEEDED";
+    public static final String BREACH_STREAK = "STREAK_BROKEN";
+    public static final String BREACH_BLOCKED_APP = "BLOCKED_APP_OPENED";
+
     @Id
     private ObjectId id;
 
@@ -25,6 +29,9 @@ public class BreachEvent {
     private ObjectId userId;
 
     private ObjectId partnershipId;
+
+    @Indexed
+    private String breachType;
 
     private String packageName;
 
@@ -34,8 +41,18 @@ public class BreachEvent {
 
     private int actualMinutes;
 
+    private String streakName;
+
+    private int missedDays;
+
+    private String severity;
+
     private boolean partnerNotified;
+
+    private boolean acknowledged;
 
     @Indexed
     private Date breachedAt;
+
+    private Date acknowledgedAt;
 }

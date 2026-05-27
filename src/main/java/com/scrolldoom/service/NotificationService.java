@@ -20,13 +20,16 @@ public class NotificationService {
                 + " limit \u2014 " + actualMinutes + " min used / "
                 + limitMinutes + " min allowed";
 
+        sendBreachNotification(fcmToken, "ScrollDoom Alert \u26A0\uFE0F", body);
+    }
+
+    public void sendBreachNotification(String fcmToken, String title, String body) {
         Message message = Message.builder()
                 .setToken(fcmToken)
                 .setNotification(Notification.builder()
-                        .setTitle("ScrollDoom Alert \u26A0\uFE0F")
+                        .setTitle(title)
                         .setBody(body)
                         .build())
-                .putData("packageName", appLabel)
                 .build();
 
         try {

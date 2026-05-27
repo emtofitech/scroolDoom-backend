@@ -13,9 +13,22 @@ public interface BreachEventRepository extends MongoRepository<BreachEvent, Obje
 
     List<BreachEvent> findByUserIdOrderByBreachedAtDesc(ObjectId userId);
 
+    List<BreachEvent> findByUserIdAndBreachTypeOrderByBreachedAtDesc(ObjectId userId, String breachType);
+
     boolean existsByUserIdAndPackageNameAndBreachedAtBetween(
             ObjectId userId, String packageName, Date start, Date end);
 
     boolean existsByUserIdAndBreachedAtBetween(
             ObjectId userId, Date start, Date end);
+
+    boolean existsByUserIdAndStreakNameAndBreachedAtBetween(
+            ObjectId userId, String streakName, Date start, Date end);
+
+    long countByUserIdAndBreachType(ObjectId userId, String breachType);
+
+    long countByBreachType(String breachType);
+
+    long countByAcknowledged(boolean acknowledged);
+
+    long countByBreachedAtBetween(Date start, Date end);
 }
