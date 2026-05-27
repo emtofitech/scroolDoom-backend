@@ -19,6 +19,9 @@ public class JwtService {
     @Value("${jwt.expiration:86400000}")
     private long expiration;
 
+    @Value("${jwt.refresh-expiration:604800000}")
+    private long refreshExpiration;
+
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
@@ -30,6 +33,21 @@ public class JwtService {
         return Jwts.builder()
                 .subject(firebaseUid)
                 .claim("email", email)
+                .claim("type", "access")
+                .issuedAt(now)
+                .expiration(expiryDate)
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public String generateRefreshToken(String firebaseUid, String email) {
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + refreshExpiration);
+
+        return Jwts.builder()
+                .subject(firebaseUid)
+                .claim("email", email)
+                .claim("type", "refresh")
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -40,10 +58,23 @@ public class JwtService {
         return extractClaims(token).getSubject();
     }
 
+    public String extractEmail(String token) {
+        return extractClaims(token).get("email", String.class);
+    }
+
     public boolean isTokenValid(String token) {
         try {
             Claims claims = extractClaims(token);
             return !claims.getExpiration().before(new Date());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isRefreshToken(String token) {
+        try {
+            Claims claims = extractClaims(token);
+            return "refresh".equals(claims.get("type", String.class));
         } catch (Exception e) {
             return false;
         }

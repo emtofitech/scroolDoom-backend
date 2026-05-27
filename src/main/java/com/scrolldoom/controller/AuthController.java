@@ -3,6 +3,8 @@ package com.scrolldoom.controller;
 import com.scrolldoom.dto.LoginRequest;
 import com.scrolldoom.dto.LoginWithPasswordRequest;
 import com.scrolldoom.dto.LoginWithPasswordResponse;
+import com.scrolldoom.dto.RefreshTokenRequest;
+import com.scrolldoom.dto.RefreshTokenResponse;
 import com.scrolldoom.dto.RegisterRequest;
 import com.scrolldoom.dto.SessionResponse;
 import com.scrolldoom.dto.UserResponse;
@@ -92,6 +94,48 @@ public class AuthController {
     })
     public ResponseEntity<LoginWithPasswordResponse> loginWithPassword(@Valid @RequestBody LoginWithPasswordRequest req) {
         LoginWithPasswordResponse response = userService.loginWithPassword(req.getEmail(), req.getPassword());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "Refresh access token using refresh token",
+            description = "Exchanges a valid refresh token for a new access token + new refresh token. "
+                    + "The old refresh token is revoked (single-use).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Tokens refreshed successfully",
+                    content = @Content(schema = @Schema(implementation = RefreshTokenResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Invalid or expired refresh token")
+    })
+    public ResponseEntity<RefreshTokenResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest req) {
+        RefreshTokenResponse response = userService.refreshAccessToken(req.getRefreshToken());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/sliding-refresh")
+    @Operation(summary = "Sliding window refresh",
+            description = "Re-issues a new access token from a valid (non-expired) access token. "
+                    + "No refresh token required — extends the session window without rotation.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "New access token issued",
+                    content = @Content(schema = @Schema(implementation = RefreshTokenResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Token expired or invalid")
+    })
+    public ResponseEntity<RefreshTokenResponse> slidingRefresh(@Valid @RequestBody RefreshTokenRequest req) {
+        RefreshTokenResponse response = userService.slidingRefresh(req.getRefreshToken());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/firebase-refresh")
+    @Operation(summary = "Refresh using Firebase ID token",
+            description = "Verifies an expired/valid Firebase ID token and returns a new self-issued JWT. "
+                    + "Useful for clients that already have a Firebase token and want a backend JWT.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "JWT issued from Firebase token",
+                    content = @Content(schema = @Schema(implementation = RefreshTokenResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Invalid Firebase token")
+    })
+    public ResponseEntity<RefreshTokenResponse> firebaseRefresh(@Valid @RequestBody RefreshTokenRequest req) {
+        RefreshTokenResponse response = userService.firebaseRefresh(req.getRefreshToken());
         return ResponseEntity.ok(response);
     }
 }

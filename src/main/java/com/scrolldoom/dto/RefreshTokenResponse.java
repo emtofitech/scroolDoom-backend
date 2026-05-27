@@ -9,11 +9,10 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class LoginWithPasswordResponse {
+public class RefreshTokenResponse {
 
     private String token;
     private String refreshToken;
     private String firebaseUid;
     private String email;
-    private String displayName;
 }

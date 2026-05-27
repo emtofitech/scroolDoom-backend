@@ -1,5 +1,6 @@
 package com.scrolldoom.dto;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,11 +10,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class LoginWithPasswordResponse {
+public class RefreshTokenRequest {
 
-    private String token;
+    @NotBlank(message = "Refresh token is required")
     private String refreshToken;
-    private String firebaseUid;
-    private String email;
-    private String displayName;
 }
