@@ -9,6 +9,7 @@ import com.scrolldoom.dto.RefreshTokenResponse;
 import com.scrolldoom.dto.RegisterRequest;
 import com.scrolldoom.dto.UserResponse;
 import com.scrolldoom.exception.ResourceNotFoundException;
+import com.scrolldoom.exception.UnauthorizedException;
 import com.scrolldoom.model.RefreshToken;
 import com.scrolldoom.model.User;
 import com.scrolldoom.repository.RefreshTokenRepository;
@@ -62,10 +63,10 @@ public class UserService {
 
     public LoginWithPasswordResponse loginWithPassword(String email, String password) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (user.getPassword() == null || !passwordEncoder.matches(password, user.getPassword())) {
-            throw new ResourceNotFoundException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         user.setLastActiveAt(new Date());
@@ -93,10 +94,10 @@ public class UserService {
 
     public UserResponse verifyPassword(String email, String password) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         if (user.getPassword() == null || !passwordEncoder.matches(password, user.getPassword())) {
-            throw new ResourceNotFoundException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         user.setLastActiveAt(new Date());
@@ -121,7 +122,7 @@ public class UserService {
 
     public RefreshTokenResponse refreshAccessToken(String refreshToken) {
         if (!jwtService.isTokenValid(refreshToken) || !jwtService.isRefreshToken(refreshToken)) {
-            throw new ResourceNotFoundException("Invalid refresh token");
+            throw new UnauthorizedException("Invalid refresh token");
         }
 
         RefreshToken storedToken = refreshTokenRepository.findByTokenAndRevokedFalse(refreshToken)
@@ -154,7 +155,7 @@ public class UserService {
 
     public RefreshTokenResponse slidingRefresh(String token) {
         if (!jwtService.isTokenValid(token)) {
-            throw new ResourceNotFoundException("Token is expired or invalid");
+            throw new UnauthorizedException("Token is expired or invalid");
         }
 
         String firebaseUid = jwtService.extractFirebaseUid(token);

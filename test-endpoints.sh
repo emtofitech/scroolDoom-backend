@@ -296,12 +296,12 @@ test_endpoint "POST /api/v1/partnerships/invite (generate)" "201" "$BODY" "$STAT
 INVITE_CODE=$(save_value "$BODY" "inviteCode")
 PARTNERSHIP_ID=$(save_value "$BODY" "id")
 
-# Get active partnership
+# Get active partnership — invite is pending, not active → 404
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/partnerships/me" \
   -H "Authorization: Bearer $TOKEN")
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-test_endpoint "GET /api/v1/partnerships/me (active)" "200" "$BODY" "$STATUS"
+test_endpoint "GET /api/v1/partnerships/me (pending invite, no active → 404)" "404" "$BODY" "$STATUS"
 
 # Duplicate invite → 409
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/partnerships/invite" \
