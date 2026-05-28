@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -uo pipefail
 
 BASE="https://doomscroll-aotr.onrender.com"
 TOKEN=""

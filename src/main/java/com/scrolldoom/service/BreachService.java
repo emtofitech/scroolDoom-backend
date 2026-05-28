@@ -57,16 +57,13 @@ public class BreachService {
                         userId, req.getPackageName(), todayStart, todayEnd);
 
         if (alreadyExists) {
-            BreachEvent existing = breachEventRepository
-                    .findByUserIdOrderByBreachedAtDesc(userId)
-                    .stream()
-                    .filter(e -> e.getPackageName().equals(req.getPackageName())
-                            && BreachEvent.BREACH_SCREEN_TIME.equals(e.getBreachType()))
-                    .findFirst()
-                    .orElse(null);
-
-            if (existing != null) {
-                return mapToResponse(existing);
+            List<BreachEvent> allBreaches = breachEventRepository
+                    .findByUserIdOrderByBreachedAtDesc(userId);
+            for (BreachEvent e : allBreaches) {
+                if (req.getPackageName().equals(e.getPackageName())
+                        && BreachEvent.BREACH_SCREEN_TIME.equals(e.getBreachType())) {
+                    return mapToResponse(e);
+                }
             }
         }
 
@@ -88,7 +85,11 @@ public class BreachService {
 
         BreachEvent saved = breachEventRepository.save(breach);
 
-        notifyPartner(saved, userId, req.getAppLabel(), req.getActualMinutes(), req.getLimitMinutes(), null);
+        try {
+            notifyPartner(saved, userId, req.getAppLabel(), req.getActualMinutes(), req.getLimitMinutes(), null);
+        } catch (Exception e) {
+            log.error("Failed to notify partner for new breach: {}", e.getMessage());
+        }
 
         return mapToResponse(saved);
     }
