@@ -15,7 +15,6 @@ PASSED=0
 FAILED=0
 TOTAL=0
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -80,8 +79,15 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/auth/login-with-passwor
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "POST /api/v1/auth/login-with-password (valid)" "200" "$BODY" "$STATUS"
-TOKEN=$(save_value "$BODY" "accessToken")
+TOKEN=$(save_value "$BODY" "token")
 REFRESH_TOKEN=$(save_value "$BODY" "refreshToken")
+
+# Debug: verify token was captured
+if [ -z "$TOKEN" ]; then
+  echo -e "${RED}  FATAL: No access token captured from login response${NC}"
+  echo "  Response body: $BODY"
+  exit 1
+fi
 
 # 4. Refresh token
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/auth/refresh" \
@@ -95,17 +101,24 @@ if [ -n "$NEW_REFRESH" ]; then
   REFRESH_TOKEN="$NEW_REFRESH"
 fi
 
-# 5. Sliding refresh
+# 5. Sliding refresh (takes access token in "refreshToken" field — confusing API naming)
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/auth/sliding-refresh" \
   -H "Content-Type: application/json" \
   -d "{\"refreshToken\":\"$TOKEN\"}")
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "POST /api/v1/auth/sliding-refresh (valid)" "200" "$BODY" "$STATUS"
+# Update token if a new one was returned
+NEW_TOKEN=$(save_value "$BODY" "token")
+if [ -n "$NEW_TOKEN" ]; then
+  TOKEN="$NEW_TOKEN"
+fi
 
 # Error paths — auth
 echo -e "\n${YELLOW}── Auth Error Paths ──${NC}"
 
+# Register with missing fields — backend currently throws ResourceNotFoundException (404)
+# TODO: Backend should validate @NotBlank and return 400; this is a known bug
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/auth/register" \
   -H "Content-Type: application/json" \
   -d '{"displayName":"Missing Fields"}')
@@ -113,6 +126,7 @@ STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "POST /api/v1/auth/register (missing fields → 400)" "400" "$BODY" "$STATUS"
 
+# Login with wrong password — backend throws ResourceNotFoundException → 404 (should be 401)
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/auth/login-with-password" \
   -H "Content-Type: application/json" \
   -d '{"email":"curltest@example.com","password":"wrongpassword"}')
@@ -120,6 +134,7 @@ STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "POST /api/v1/auth/login-with-password (wrong password → 401)" "401" "$BODY" "$STATUS"
 
+# Refresh with invalid token — backend throws ResourceNotFoundException → 404 (should be 401)
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/auth/refresh" \
   -H "Content-Type: application/json" \
   -d '{"refreshToken":"invalid-token-value"}')
@@ -132,11 +147,13 @@ test_endpoint "POST /api/v1/auth/refresh (invalid token → 401)" "401" "$BODY" 
 # ============================================================
 echo -e "\n${YELLOW}═══ Phase 2: User Profile ═══${NC}"
 
-# No auth → 401
+# No auth → should be 403 (Spring Security blocks unauthenticated)
+# Current behavior: JwtAuthFilter passes through, AnonymousAuthenticationFilter creates anon token,
+# controller throws ResourceNotFoundException → 404
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/users/me")
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-test_endpoint "GET /api/v1/users/me (no auth → 401)" "401" "$BODY" "$STATUS"
+test_endpoint "GET /api/v1/users/me (no auth → 403)" "403" "$BODY" "$STATUS"
 
 # Get profile
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/users/me" \
@@ -539,9 +556,10 @@ test_endpoint "PUT /api/v1/usage/notifications/{id}/opened (not found → 404)" 
 # ============================================================
 echo -e "\n${YELLOW}═══ Phase 9: Swagger/OpenAPI ═══${NC}"
 
-RESP=$(curl -s -w "\n%{http_code}" -o /dev/null "$BASE/swagger-ui/index.html")
+# SpringDoc redirects /swagger-ui.html → /swagger-ui/index.html
+RESP=$(curl -s -w "\n%{http_code}" -o /dev/null -L "$BASE/swagger-ui/index.html")
 STATUS=$(echo "$RESP" | tail -1)
-test_endpoint "GET /swagger-ui/index.html" "200" "" "$STATUS"
+test_endpoint "GET /swagger-ui/index.html (follow redirects)" "200" "" "$STATUS"
 
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/v3/api-docs" | head -c 200)
 STATUS=$(echo "$RESP" | tail -1)
