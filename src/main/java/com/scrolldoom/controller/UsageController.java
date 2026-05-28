@@ -1,9 +1,11 @@
 package com.scrolldoom.controller;
 
-import com.scrolldoom.dto.GlobalStatsResponse;
+import com.scrolldoom.dto.ApiEnvelope;
+import com.scrolldoom.dto.UsageEventResponse;
+import com.scrolldoom.dto.UserActivityResponse;
 import com.scrolldoom.dto.TrackEventRequest;
 import com.scrolldoom.dto.TrackNotificationRequest;
-import com.scrolldoom.dto.UsageStatsResponse;
+import com.scrolldoom.dto.NotificationDeliveryResponse;
 import com.scrolldoom.model.AppUsageEvent;
 import com.scrolldoom.model.NotificationDelivery;
 import com.scrolldoom.model.UserActivity;
@@ -28,7 +30,7 @@ public class UsageController {
 
     @PostMapping("/events")
     @Operation(summary = "Track app usage event")
-    public ResponseEntity<AppUsageEvent> trackEvent(
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<UsageEventResponse>> trackEvent(
             Authentication authentication,
             @Valid @RequestBody TrackEventRequest request) {
         String firebaseUid = authentication.getName();
@@ -41,39 +43,41 @@ public class UsageController {
             request.getDeviceInfo(),
             request.getAppVersion()
         );
-        return ResponseEntity.ok(event);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(mapToUsageEventResponse(event)));
     }
 
     @PostMapping("/app-open")
     @Operation(summary = "Record app open")
-    public ResponseEntity<UserActivity> recordAppOpen(Authentication authentication) {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<UserActivityResponse>> recordAppOpen(
+            Authentication authentication) {
         String firebaseUid = authentication.getName();
         UserActivity activity = usagePollingService.recordAppOpen(firebaseUid);
-        return ResponseEntity.ok(activity);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(mapToActivityResponse(activity)));
     }
 
     @PostMapping("/app-close")
     @Operation(summary = "Record app close")
-    public ResponseEntity<UserActivity> recordAppClose(Authentication authentication) {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<UserActivityResponse>> recordAppClose(
+            Authentication authentication) {
         String firebaseUid = authentication.getName();
         UserActivity activity = usagePollingService.recordAppClose(firebaseUid);
-        return ResponseEntity.ok(activity);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(mapToActivityResponse(activity)));
     }
 
     @PostMapping("/heartbeat")
     @Operation(summary = "Send heartbeat to maintain online status")
-    public ResponseEntity<UserActivity> heartbeat(
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<UserActivityResponse>> heartbeat(
             Authentication authentication,
             @RequestParam(required = false) String screenName,
             @RequestParam(required = false) String featureName) {
         String firebaseUid = authentication.getName();
         UserActivity activity = usagePollingService.updateLastSeen(firebaseUid, screenName, featureName);
-        return ResponseEntity.ok(activity);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(mapToActivityResponse(activity)));
     }
 
     @PostMapping("/notifications")
     @Operation(summary = "Track notification delivery")
-    public ResponseEntity<NotificationDelivery> trackNotification(
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<NotificationDeliveryResponse>> trackNotification(
             Authentication authentication,
             @Valid @RequestBody TrackNotificationRequest request) {
         String firebaseUid = authentication.getName();
@@ -83,41 +87,91 @@ public class UsageController {
             request.getTitle(),
             request.getBody()
         );
-        return ResponseEntity.ok(delivery);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(mapToNotificationResponse(delivery)));
     }
 
     @PutMapping("/notifications/{deliveryId}/delivered")
     @Operation(summary = "Mark notification as delivered")
-    public ResponseEntity<NotificationDelivery> markDelivered(@PathVariable String deliveryId) {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<NotificationDeliveryResponse>> markDelivered(
+            @PathVariable String deliveryId) {
         NotificationDelivery delivery = usagePollingService.markDelivered(deliveryId);
         if (delivery == null) {
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(404)
+                    .body(com.scrolldoom.dto.ApiEnvelope.error(404, "Notification not found"));
         }
-        return ResponseEntity.ok(delivery);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(mapToNotificationResponse(delivery)));
     }
 
     @PutMapping("/notifications/{deliveryId}/opened")
     @Operation(summary = "Mark notification as opened")
-    public ResponseEntity<NotificationDelivery> markOpened(@PathVariable String deliveryId) {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<NotificationDeliveryResponse>> markOpened(
+            @PathVariable String deliveryId) {
         NotificationDelivery delivery = usagePollingService.markOpened(deliveryId);
         if (delivery == null) {
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(404)
+                    .body(com.scrolldoom.dto.ApiEnvelope.error(404, "Notification not found"));
         }
-        return ResponseEntity.ok(delivery);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(mapToNotificationResponse(delivery)));
     }
 
     @GetMapping("/stats/me")
     @Operation(summary = "Get current user usage stats")
-    public ResponseEntity<Map<String, Object>> getMyStats(Authentication authentication) {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<Map<String, Object>>> getMyStats(
+            Authentication authentication) {
         String firebaseUid = authentication.getName();
         Map<String, Object> stats = usagePollingService.getUserUsageStats(firebaseUid);
-        return ResponseEntity.ok(stats);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(stats));
     }
 
     @GetMapping("/stats/global")
     @Operation(summary = "Get global usage stats (admin)")
-    public ResponseEntity<Map<String, Object>> getGlobalStats() {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<Map<String, Object>>> getGlobalStats() {
         Map<String, Object> stats = usagePollingService.getGlobalUsageStats();
-        return ResponseEntity.ok(stats);
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(stats));
+    }
+
+    private UsageEventResponse mapToUsageEventResponse(AppUsageEvent event) {
+        return UsageEventResponse.builder()
+                .id(event.getId() != null ? event.getId().toHexString() : null)
+                .eventType(event.getEventType())
+                .screenName(event.getScreenName())
+                .featureName(event.getFeatureName())
+                .durationMs(event.getDurationMs())
+                .deviceInfo(event.getDeviceInfo())
+                .appVersion(event.getAppVersion())
+                .timestamp(event.getTimestamp())
+                .build();
+    }
+
+    private UserActivityResponse mapToActivityResponse(UserActivity activity) {
+        if (activity == null) return null;
+        return UserActivityResponse.builder()
+                .id(activity.getId() != null ? activity.getId().toHexString() : null)
+                .online(activity.isOnline())
+                .lastScreen(activity.getLastScreen())
+                .lastFeature(activity.getLastFeature())
+                .lastSeen(activity.getLastSeen())
+                .lastAppOpen(activity.getLastAppOpen())
+                .lastAppClose(activity.getLastAppClose())
+                .totalSessionMs(activity.getTotalSessionMs())
+                .sessionCount(activity.getSessionCount())
+                .createdAt(activity.getCreatedAt())
+                .updatedAt(activity.getUpdatedAt())
+                .build();
+    }
+
+    private NotificationDeliveryResponse mapToNotificationResponse(NotificationDelivery delivery) {
+        if (delivery == null) return null;
+        return NotificationDeliveryResponse.builder()
+                .id(delivery.getId() != null ? delivery.getId().toHexString() : null)
+                .notificationType(delivery.getNotificationType())
+                .title(delivery.getTitle())
+                .body(delivery.getBody())
+                .delivered(delivery.isDelivered())
+                .opened(delivery.isOpened())
+                .sentAt(delivery.getSentAt())
+                .deliveredAt(delivery.getDeliveredAt())
+                .openedAt(delivery.getOpenedAt())
+                .build();
     }
 }

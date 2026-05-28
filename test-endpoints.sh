@@ -27,9 +27,22 @@ test_endpoint() {
   local status="$4"
 
   TOTAL=$((TOTAL + 1))
+  local success_field=""
+  if [ -n "$response" ]; then
+    success_field=$(echo "$response" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('success','')).lower())" 2>/dev/null || echo "")
+  fi
+
   if [ "$status" = "$expected" ]; then
     PASSED=$((PASSED + 1))
-    echo -e "${GREEN}✓${NC} [$status] $desc"
+    if [ "$status" = "204" ] || [ "$status" = "403" ] || [ -z "$success_field" ]; then
+      echo -e "${GREEN}✓${NC} [$status] $desc"
+    elif [ "$success_field" = "true" ] && [ "$expected" = "200" -o "$expected" = "201" ]; then
+      echo -e "${GREEN}✓${NC} [$status] $desc (success=true)"
+    elif [ "$success_field" = "false" ] && [ "$expected" != "200" ] && [ "$expected" != "201" ]; then
+      echo -e "${GREEN}✓${NC} [$status] $desc (success=false, error envelope)"
+    else
+      echo -e "${GREEN}✓${NC} [$status] $desc"
+    fi
   else
     FAILED=$((FAILED + 1))
     echo -e "${RED}✗${NC} [$status != $expected] $desc"
@@ -38,7 +51,17 @@ test_endpoint() {
 }
 
 save_value() {
-  echo "$1" | python3 -c "import sys,json; print(json.load(sys.stdin).get('$2',''))" 2>/dev/null || echo ""
+  echo "$1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+inner=d.get('data',d)
+if isinstance(inner,dict):
+    print(inner.get('$2',''))
+elif isinstance(inner,list) and len(inner)>0 and isinstance(inner[0],dict):
+    print(inner[0].get('$2',''))
+else:
+    print('')
+" 2>/dev/null || echo ""
 }
 
 # ============================================================
@@ -190,7 +213,7 @@ RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/sessions" \
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "GET /api/v1/sessions (list)" "200" "$BODY" "$STATUS"
-SESSION_ID=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['id'] if d and isinstance(d,list) and len(d)>0 else '')" 2>/dev/null || echo "")
+SESSION_ID=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); inner=d.get('data',d); print(inner[0]['id'] if isinstance(inner,list) and len(inner)>0 else '')" 2>/dev/null || echo "")
 
 # Revoke non-existent session → 404
 RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/sessions/000000000000000000000000" \
@@ -352,7 +375,7 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/breaches/screen-time" \
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "POST /api/v1/breaches/screen-time (report)" "201" "$BODY" "$STATUS"
-BREACH_ID=$(save_value "$BODY" "id")
+BREACH_ID=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); inner=d.get('data',d); print(inner.get('id','') if isinstance(inner,dict) else '')" 2>/dev/null || echo "")
 
 # Streak broken
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/breaches/streak" \

@@ -1,5 +1,6 @@
 package com.scrolldoom.controller;
 
+import com.scrolldoom.dto.ApiEnvelope;
 import com.scrolldoom.dto.SessionResponse;
 import com.scrolldoom.service.SessionService;
 import com.scrolldoom.service.UserService;
@@ -26,26 +27,27 @@ public class SessionController {
 
     @GetMapping
     @Operation(summary = "List active sessions",
-            description = "Returns all active (non-expired, non-revoked) sessions for the current user.")
+            description = "Returns all active sessions for the current user.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List of active sessions")
     })
-    public ResponseEntity<List<SessionResponse>> listSessions() {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<List<SessionResponse>>> listSessions() {
         String firebaseUid = UserService.getCurrentFirebaseUid();
-        return ResponseEntity.ok(sessionService.getUserSessions(firebaseUid));
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(sessionService.getUserSessions(firebaseUid)));
     }
 
     @DeleteMapping("/{sessionId}")
     @Operation(summary = "Revoke a session",
-            description = "Revokes a specific session by ID. The session will no longer be valid.")
+            description = "Revokes a specific session by ID.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Session revoked successfully"),
             @ApiResponse(responseCode = "404", description = "Session not found")
     })
-    public ResponseEntity<Map<String, String>> revokeSession(@PathVariable String sessionId) {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<Map<String, String>>> revokeSession(
+            @PathVariable String sessionId) {
         String firebaseUid = UserService.getCurrentFirebaseUid();
         sessionService.revokeSession(firebaseUid, sessionId);
-        return ResponseEntity.ok(Map.of("message", "Session revoked"));
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(Map.of("message", "Session revoked")));
     }
 
     @DeleteMapping
@@ -54,9 +56,9 @@ public class SessionController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "All sessions revoked")
     })
-    public ResponseEntity<Map<String, String>> revokeAllSessions() {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<Map<String, String>>> revokeAllSessions() {
         String firebaseUid = UserService.getCurrentFirebaseUid();
         sessionService.revokeAllSessions(firebaseUid);
-        return ResponseEntity.ok(Map.of("message", "All sessions revoked"));
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(Map.of("message", "All sessions revoked")));
     }
 }

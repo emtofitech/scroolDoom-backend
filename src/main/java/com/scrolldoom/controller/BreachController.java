@@ -1,20 +1,21 @@
 package com.scrolldoom.controller;
 
+import com.scrolldoom.dto.ApiEnvelope;
+import com.scrolldoom.dto.BlockedAppBreachRequest;
 import com.scrolldoom.dto.BreachEventResponse;
 import com.scrolldoom.dto.CreateBreachRequest;
+import com.scrolldoom.dto.StreakBreachRequest;
 import com.scrolldoom.model.BreachEvent;
 import com.scrolldoom.service.BreachService;
 import com.scrolldoom.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import lombok.Data;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -40,134 +41,111 @@ public class BreachController {
 
     @PostMapping("/screen-time")
     @Operation(summary = "Report a screen time breach",
-            description = "Records that the user exceeded their daily limit for a specific app. "
-                    + "Duplicate breaches for the same app on the same calendar day are silently ignored.")
+            description = "Records that the user exceeded their daily limit for a specific app.")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Breach recorded (or existing breach returned)",
-                    content = @Content(schema = @Schema(implementation = BreachEventResponse.class))),
+            @ApiResponse(responseCode = "201", description = "Breach recorded"),
             @ApiResponse(responseCode = "400", description = "Validation failed"),
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
     })
-    public ResponseEntity<BreachEventResponse> reportScreenTimeBreach(
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<BreachEventResponse>> reportScreenTimeBreach(
             @Valid @RequestBody CreateBreachRequest req) {
         ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(breachService.reportBreach(userId, req));
+                .body(com.scrolldoom.dto.ApiEnvelope.ok(breachService.reportBreach(userId, req)));
     }
 
     @PostMapping("/streak")
     @Operation(summary = "Report a streak broken",
-            description = "Records that the user broke a streak. "
-                    + "Duplicate breaches for the same streak on the same calendar day are silently ignored.")
+            description = "Records that the user broke a streak.")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Breach recorded (or existing breach returned)",
-                    content = @Content(schema = @Schema(implementation = BreachEventResponse.class))),
+            @ApiResponse(responseCode = "201", description = "Breach recorded"),
             @ApiResponse(responseCode = "400", description = "Validation failed"),
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
     })
-    public ResponseEntity<BreachEventResponse> reportStreakBroken(
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Streak breach details",
-                    required = true,
-                    content = @Content(
-                            schema = @Schema(implementation = StreakBreachRequest.class),
-                            examples = @ExampleObject("""
-                                    {
-                                      "streakName": "No Instagram Before Noon",
-                                      "missedDays": 3
-                                    }""")))
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<BreachEventResponse>> reportStreakBroken(
             @Valid @RequestBody StreakBreachRequest req) {
         ObjectId userId = userService.getCurrentUserId();
         BreachEvent breach = breachService.reportStreakBroken(userId, req.getStreakName(), req.getMissedDays());
-        return ResponseEntity.status(HttpStatus.CREATED).body(mapToResponse(breach));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(com.scrolldoom.dto.ApiEnvelope.ok(mapToResponse(breach)));
     }
 
     @PostMapping("/blocked-app")
     @Operation(summary = "Report a blocked app opened",
-            description = "Records that the user attempted to open a blocked app. "
-                    + "Duplicate breaches for the same app on the same calendar day are silently ignored.")
+            description = "Records that the user attempted to open a blocked app.")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Breach recorded (or existing breach returned)",
-                    content = @Content(schema = @Schema(implementation = BreachEventResponse.class))),
+            @ApiResponse(responseCode = "201", description = "Breach recorded"),
             @ApiResponse(responseCode = "400", description = "Validation failed"),
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
     })
-    public ResponseEntity<BreachEventResponse> reportBlockedAppOpened(
-            @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Blocked app breach details",
-                    required = true,
-                    content = @Content(
-                            schema = @Schema(implementation = BlockedAppBreachRequest.class),
-                            examples = @ExampleObject("""
-                                    {
-                                      "packageName": "com.instagram.android",
-                                      "appLabel": "Instagram"
-                                    }""")))
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<BreachEventResponse>> reportBlockedAppOpened(
             @Valid @RequestBody BlockedAppBreachRequest req) {
         ObjectId userId = userService.getCurrentUserId();
         BreachEvent breach = breachService.reportBlockedAppOpened(userId, req.getPackageName(), req.getAppLabel());
-        return ResponseEntity.status(HttpStatus.CREATED).body(mapToResponse(breach));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(com.scrolldoom.dto.ApiEnvelope.ok(mapToResponse(breach)));
     }
 
     @GetMapping("/me")
     @Operation(summary = "Get my breaches",
-            description = "Returns all breach events for the current user, ordered by most recent first.")
+            description = "Returns all breach events for the current user.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "List of breach events",
-                    content = @Content(schema = @Schema(implementation = BreachEventResponse.class))),
+            @ApiResponse(responseCode = "200", description = "List of breach events"),
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
     })
-    public ResponseEntity<List<BreachEventResponse>> getMyBreaches() {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<List<BreachEventResponse>>> getMyBreaches() {
         ObjectId userId = userService.getCurrentUserId();
-        return ResponseEntity.ok(breachService.getMyBreaches(userId));
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(breachService.getMyBreaches(userId)));
     }
 
     @GetMapping("/me/type/{breachType}")
     @Operation(summary = "Get my breaches by type",
-            description = "Returns breach events filtered by type (SCREEN_TIME_EXCEEDED, STREAK_BROKEN, BLOCKED_APP_OPENED).")
+            description = "Returns breach events filtered by type.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "List of breach events",
-                    content = @Content(schema = @Schema(implementation = BreachEventResponse.class))),
+            @ApiResponse(responseCode = "200", description = "List of breach events"),
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
     })
-    public ResponseEntity<List<BreachEventResponse>> getMyBreachesByType(
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<List<BreachEventResponse>>> getMyBreachesByType(
             @PathVariable String breachType) {
         ObjectId userId = userService.getCurrentUserId();
-        return ResponseEntity.ok(breachService.getMyBreachesByType(userId, breachType));
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(
+                breachService.getMyBreachesByType(userId, breachType)));
     }
 
     @PatchMapping("/{breachId}/acknowledge")
     @Operation(summary = "Acknowledge a breach",
             description = "Marks a breach event as acknowledged by the user.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Breach acknowledged",
-                    content = @Content(schema = @Schema(implementation = BreachEventResponse.class))),
+            @ApiResponse(responseCode = "200", description = "Breach acknowledged"),
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
             @ApiResponse(responseCode = "404", description = "Breach not found")
     })
-    public ResponseEntity<BreachEventResponse> acknowledgeBreach(@PathVariable String breachId) {
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<BreachEventResponse>> acknowledgeBreach(
+            @PathVariable String breachId) {
         ObjectId userId = userService.getCurrentUserId();
         BreachEvent breach = breachService.acknowledgeBreach(new ObjectId(breachId), userId);
-        return ResponseEntity.ok(mapToResponse(breach));
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(mapToResponse(breach)));
     }
 
     @GetMapping("/partner")
-    public ResponseEntity<Page<BreachEventResponse>> getPartnerBreaches(
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<Page<BreachEventResponse>>> getPartnerBreaches(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) Boolean acknowledged) {
-        org.bson.types.ObjectId userId = userService.getCurrentUserId();
-        return ResponseEntity.ok(breachService.getPartnerBreaches(userId, acknowledged, PageRequest.of(page, size)));
+        ObjectId userId = userService.getCurrentUserId();
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(
+                breachService.getPartnerBreaches(userId, acknowledged, PageRequest.of(page, size))));
     }
 
     @GetMapping("/partner/type/{breachType}")
-    public ResponseEntity<Page<BreachEventResponse>> getPartnerBreachesByType(
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<Page<BreachEventResponse>>> getPartnerBreachesByType(
             @PathVariable String breachType,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) Boolean acknowledged) {
-        org.bson.types.ObjectId userId = userService.getCurrentUserId();
-        return ResponseEntity.ok(breachService.getPartnerBreachesByType(userId, breachType, acknowledged, PageRequest.of(page, size)));
+        ObjectId userId = userService.getCurrentUserId();
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(
+                breachService.getPartnerBreachesByType(userId, breachType, acknowledged, PageRequest.of(page, size))));
     }
 
     private BreachEventResponse mapToResponse(BreachEvent breach) {
@@ -185,29 +163,5 @@ public class BreachController {
                 .acknowledged(breach.isAcknowledged())
                 .breachedAt(breach.getBreachedAt())
                 .build();
-    }
-
-    @Data
-    @Schema(description = "Request to report a streak breach")
-    public static class StreakBreachRequest {
-        @Schema(description = "Name of the streak that was broken", example = "No Instagram Before Noon", required = true)
-        @jakarta.validation.constraints.NotBlank
-        private String streakName;
-
-        @Schema(description = "Number of consecutive days missed", example = "3", required = true)
-        @jakarta.validation.constraints.Min(1)
-        private int missedDays;
-    }
-
-    @Data
-    @Schema(description = "Request to report a blocked app breach")
-    public static class BlockedAppBreachRequest {
-        @Schema(description = "Android package name or iOS bundle identifier", example = "com.instagram.android", required = true)
-        @jakarta.validation.constraints.NotBlank
-        private String packageName;
-
-        @Schema(description = "Human-readable app label", example = "Instagram", required = true)
-        @jakarta.validation.constraints.NotBlank
-        private String appLabel;
     }
 }

@@ -1,5 +1,6 @@
 package com.scrolldoom.controller;
 
+import com.scrolldoom.dto.ApiEnvelope;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -19,11 +20,9 @@ public class HealthController {
     @GetMapping("/api/v1/health")
     @Operation(summary = "Healthcheck", description = "Returns 200 OK when the service is running.")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Service is healthy",
-                    content = @Content(examples = @ExampleObject("""
-                            {"status": "UP"}""")))
+            @ApiResponse(responseCode = "200", description = "Service is healthy")
     })
-    public ResponseEntity<Map<String, String>> health() {
-        return ResponseEntity.ok(Map.of("status", "UP"));
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<Map<String, String>>> health() {
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(Map.of("status", "UP")));
     }
 }
