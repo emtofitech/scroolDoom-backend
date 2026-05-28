@@ -561,9 +561,9 @@ RESP=$(curl -s -w "\n%{http_code}" -o /dev/null -L "$BASE/swagger-ui/index.html"
 STATUS=$(echo "$RESP" | tail -1)
 test_endpoint "GET /swagger-ui/index.html (follow redirects)" "200" "" "$STATUS"
 
-RESP=$(curl -s -w "\n%{http_code}" "$BASE/v3/api-docs" | head -c 200)
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/v3/api-docs")
 STATUS=$(echo "$RESP" | tail -1)
-BODY=$(echo "$RESP" | head -n -1)
+BODY=$(echo "$RESP" | head -n -1 | head -c 100)
 test_endpoint "GET /v3/api-docs (spec)" "200" "$BODY" "$STATUS"
 
 # ============================================================

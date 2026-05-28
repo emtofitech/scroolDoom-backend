@@ -52,6 +52,9 @@ public class BreachService {
         Date todayStart = getStartOfDay(new Date());
         Date todayEnd = getEndOfDay(new Date());
 
+        log.info("Reporting screen-time breach for userId={}, packageName={}, limit={}, actual={}",
+                userId, req.getPackageName(), req.getLimitMinutes(), req.getActualMinutes());
+
         boolean alreadyExists = breachEventRepository
                 .existsByUserIdAndPackageNameAndBreachedAtBetween(
                         userId, req.getPackageName(), todayStart, todayEnd);
@@ -62,9 +65,11 @@ public class BreachService {
             for (BreachEvent e : allBreaches) {
                 if (req.getPackageName().equals(e.getPackageName())
                         && BreachEvent.BREACH_SCREEN_TIME.equals(e.getBreachType())) {
+                    log.info("Found existing screen-time breach for today, returning it");
                     return mapToResponse(e);
                 }
             }
+            log.info("No matching screen-time breach found despite exists=true, creating new");
         }
 
         ObjectId partnershipId = getActivePartnershipId(userId);
@@ -84,6 +89,7 @@ public class BreachService {
                 .build();
 
         BreachEvent saved = breachEventRepository.save(breach);
+        log.info("Saved screen-time breach with id={}", saved.getId());
 
         try {
             notifyPartner(saved, userId, req.getAppLabel(), req.getActualMinutes(), req.getLimitMinutes(), null);
