@@ -179,9 +179,24 @@ public class UserService {
             FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(firebaseIdToken);
             String firebaseUid = decodedToken.getUid();
             String email = decodedToken.getEmail();
+            String name = (String) decodedToken.getClaims().get("name");
 
-            User user = userRepository.findByFirebaseUid(firebaseUid)
-                    .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+            User user = userRepository.findByFirebaseUid(firebaseUid).orElse(null);
+            
+            if (user == null) {
+                // Auto-register user if they don't exist
+                user = User.builder()
+                        .firebaseUid(firebaseUid)
+                        .displayName(name != null ? name : email)
+                        .email(email)
+                        .createdAt(new Date())
+                        .lastActiveAt(new Date())
+                        .build();
+                user = userRepository.save(user);
+            } else {
+                user.setLastActiveAt(new Date());
+                userRepository.save(user);
+            }
 
             String newAccessToken = jwtService.generateToken(firebaseUid, email);
             String newRefreshToken = jwtService.generateRefreshToken(firebaseUid, email);
@@ -201,7 +216,7 @@ public class UserService {
                     .email(email)
                     .build();
         } catch (FirebaseAuthException e) {
-            throw new ResourceNotFoundException("Invalid Firebase token: " + e.getMessage());
+            throw new UnauthorizedException("Invalid Firebase token: " + e.getMessage());
         }
     }
 

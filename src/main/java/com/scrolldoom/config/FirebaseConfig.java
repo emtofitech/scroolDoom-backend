@@ -27,26 +27,51 @@ public class FirebaseConfig {
             String credentialsPath = System.getenv("FIREBASE_CREDENTIALS_PATH");
 
             try {
-                GoogleCredentials credentials;
+                GoogleCredentials credentials = null;
 
                 if (credentialsJson != null && !credentialsJson.isBlank()) {
+                    log.info("Initializing Firebase with credentials from FIREBASE_CREDENTIALS_JSON");
                     credentials = GoogleCredentials.fromStream(
                             new ByteArrayInputStream(credentialsJson.getBytes(StandardCharsets.UTF_8)));
                 } else if (credentialsPath != null && !credentialsPath.isBlank()) {
+                    log.info("Initializing Firebase with credentials from path: {}", credentialsPath);
                     credentials = GoogleCredentials.fromStream(new FileInputStream(credentialsPath));
                 } else {
-                    log.warn("No Firebase credentials found. Firebase auth disabled. Set FIREBASE_CREDENTIALS_JSON or FIREBASE_CREDENTIALS_PATH to enable.");
-                    return;
+                    // Try default location
+                    java.io.File defaultFile = new java.io.File("firebase-service-account.json");
+                    if (defaultFile.exists()) {
+                        log.info("Initializing Firebase with credentials from default file: firebase-service-account.json");
+                        credentials = GoogleCredentials.fromStream(new FileInputStream(defaultFile));
+                    } else {
+                        // Try classpath
+                        java.io.InputStream is = getClass().getClassLoader().getResourceAsStream("firebase-service-account.json");
+                        if (is != null) {
+                            log.info("Initializing Firebase with credentials from classpath: firebase-service-account.json");
+                            credentials = GoogleCredentials.fromStream(is);
+                        } else {
+                            try {
+                                log.info("Attempting to initialize Firebase with Application Default Credentials");
+                                credentials = GoogleCredentials.getApplicationDefault();
+                            } catch (IOException e) {
+                                log.warn("No Firebase credentials found and Application Default Credentials not available. Firebase auth disabled. " +
+                                        "Set FIREBASE_CREDENTIALS_JSON, FIREBASE_CREDENTIALS_PATH, or provide firebase-service-account.json to enable.");
+                                return;
+                            }
+                        }
+                    }
                 }
 
-                FirebaseOptions options = FirebaseOptions.builder()
-                        .setCredentials(credentials)
-                        .build();
+                if (credentials != null) {
+                    FirebaseOptions options = FirebaseOptions.builder()
+                            .setCredentials(credentials)
+                            .build();
 
-                FirebaseApp.initializeApp(options);
-                log.info("Firebase initialized successfully");
+                    FirebaseApp.initializeApp(options);
+                    log.info("Firebase initialized successfully");
+                }
             } catch (IOException e) {
-                throw new IllegalStateException("Failed to initialize Firebase: " + e.getMessage(), e);
+                log.error("Failed to initialize Firebase: {}", e.getMessage());
+                // Don't throw exception to allow the app to start without Firebase
             }
         }
     }
