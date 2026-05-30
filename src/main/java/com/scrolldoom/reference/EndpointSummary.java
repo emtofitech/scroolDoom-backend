@@ -69,6 +69,27 @@ package com.scrolldoom.reference;
  *            Throw 403 if limit.userId != current user's ObjectId.
  *            Hard delete from MongoDB.
  *
+ * GET /api/v1/limits/status
+ *   Auth:    JWT
+ *   Returns: 200 OK
+ *   Response: [ LimitStatusResponse, ... ]
+ *   Logic:   Get all AppLimit docs for current user.
+ *            Query today's BreachEvent docs for SCREEN_TIME_EXCEEDED type.
+ *            For each limit: if a breach exists for that packageName today,
+ *            set exceeded=true with actualMinutes from the breach; else
+ *            exceeded=false with actualMinutes=null.
+ *            Return remainingMinutes = dailyLimitMinutes - actualMinutes.
+ *
+ * LimitStatusResponse {
+ *   id:                String,
+ *   packageName:       String,
+ *   appLabel:          String,
+ *   dailyLimitMinutes: int,
+ *   exceeded:          boolean,
+ *   actualMinutes:     Integer | null,
+ *   remainingMinutes:  int
+ * }
+ *
  * ========================================================================
  * PARTNERSHIPS
  * ========================================================================

@@ -3,6 +3,7 @@ package com.scrolldoom.controller;
 import com.scrolldoom.dto.ApiEnvelope;
 import com.scrolldoom.dto.AppLimitResponse;
 import com.scrolldoom.dto.CreateLimitRequest;
+import com.scrolldoom.dto.LimitStatusResponse;
 import com.scrolldoom.dto.UpdateLimitRequest;
 import com.scrolldoom.service.AppLimitService;
 import com.scrolldoom.service.UserService;
@@ -45,6 +46,18 @@ public class LimitController {
     public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<List<AppLimitResponse>>> getAllLimits() {
         ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(appLimitService.getLimits(userId)));
+    }
+
+    @GetMapping("/status")
+    @Operation(summary = "Get limit statuses",
+            description = "Returns whether each app limit has been exceeded today, based on recorded screen-time breaches.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of limit statuses"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
+    })
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<List<LimitStatusResponse>>> getLimitStatuses() {
+        ObjectId userId = userService.getCurrentUserId();
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(appLimitService.getLimitStatuses(userId)));
     }
 
     @PostMapping

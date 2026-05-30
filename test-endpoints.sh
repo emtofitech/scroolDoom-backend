@@ -251,6 +251,13 @@ STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "GET /api/v1/limits (list)" "200" "$BODY" "$STATUS"
 
+# Get limit status (no breach yet)
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/status" \
+  -H "Authorization: Bearer $TOKEN")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/limits/status (initial, not exceeded)" "200" "$BODY" "$STATUS"
+
 # Update limit
 if [ -n "$LIMIT_ID" ]; then
   RESP=$(curl -s -w "\n%{http_code}" -X PUT "$BASE/api/v1/limits/$LIMIT_ID" \
@@ -376,6 +383,31 @@ STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "POST /api/v1/breaches/screen-time (report)" "201" "$BODY" "$STATUS"
 BREACH_ID=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); inner=d.get('data',d); print(inner.get('id','') if isinstance(inner,dict) else '')" 2>/dev/null || echo "")
+
+# Re-create Instagram limit and check status now shows exceeded
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"packageName":"com.instagram.android","appLabel":"Instagram","dailyLimitMinutes":30}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+INSTA_LIMIT_ID=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); inner=d.get('data',d); print(inner.get('id','') if isinstance(inner,dict) else '')" 2>/dev/null || echo "")
+[ -n "$INSTA_LIMIT_ID" ] && test_endpoint "POST /api/v1/limits (re-create for status check)" "201" "$BODY" "$STATUS"
+
+if [ -n "$INSTA_LIMIT_ID" ]; then
+  RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/status" \
+    -H "Authorization: Bearer $TOKEN")
+  STATUS=$(echo "$RESP" | tail -1)
+  BODY=$(echo "$RESP" | head -n -1)
+  test_endpoint "GET /api/v1/limits/status (after breach, exceeded)" "200" "$BODY" "$STATUS"
+
+  # Cleanup
+  RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/$INSTA_LIMIT_ID" \
+    -H "Authorization: Bearer $TOKEN")
+  STATUS=$(echo "$RESP" | tail -1)
+  BODY=$(echo "$RESP" | head -n -1)
+  test_endpoint "DELETE /api/v1/limits/$INSTA_LIMIT_ID (cleanup)" "204" "$BODY" "$STATUS"
+fi
 
 # Streak broken
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/breaches/streak" \
