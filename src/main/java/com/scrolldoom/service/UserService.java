@@ -161,6 +161,9 @@ public class UserService {
         String firebaseUid = jwtService.extractFirebaseUid(token);
         String email = jwtService.extractEmail(token);
 
+        userRepository.findByFirebaseUid(firebaseUid)
+                .orElseThrow(() -> new UnauthorizedException("User no longer exists"));
+
         String newAccessToken = jwtService.generateToken(firebaseUid, email);
 
         return RefreshTokenResponse.builder()

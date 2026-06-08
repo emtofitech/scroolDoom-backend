@@ -39,7 +39,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = authHeader.substring(7);
 
-        if (!FirebaseApp.getApps().isEmpty()) {
+        boolean firebaseAvailable = !FirebaseApp.getApps().isEmpty();
+
+        if (firebaseAvailable) {
             try {
                 FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(token);
                 Authentication authentication = new UsernamePasswordAuthenticationToken(
@@ -50,7 +52,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 filterChain.doFilter(request, response);
                 return;
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                sendUnauthorized(response, "Invalid Firebase token");
+                return;
             }
         }
 
@@ -66,8 +70,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        sendUnauthorized(response, "Invalid or expired token");
+    }
+
+    private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
-        response.getWriter().write("{\"error\": \"Invalid or expired token\"}");
+        response.getWriter().write("{\"error\": \"" + message + "\"}");
     }
 }

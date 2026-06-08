@@ -1,6 +1,7 @@
 server:
   port: ${PORT:8080}
   address: 0.0.0.0
+  forward-headers-strategy: framework
 
 spring:
   data:
@@ -11,6 +12,7 @@ api:
   base-path: /api/v1
 
 jwt:
-  secret: ${JWT_SECRET:myDefaultSecretKeyThatIsLongEnoughForHS256Algorithm}
+  secret: ${JWT_SECRET}
   expiration: 86400000
   refresh-expiration: 604800000
+

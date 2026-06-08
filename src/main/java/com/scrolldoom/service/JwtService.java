@@ -3,6 +3,9 @@ package com.scrolldoom.service;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -13,7 +16,9 @@ import java.util.Date;
 @Service
 public class JwtService {
 
-    @Value("${jwt.secret:myDefaultSecretKeyThatIsLongEnoughForHS256Algorithm}")
+    private static final Logger log = LoggerFactory.getLogger(JwtService.class);
+
+    @Value("${jwt.secret}")
     private String secret;
 
     @Value("${jwt.expiration:86400000}")
@@ -21,6 +26,19 @@ public class JwtService {
 
     @Value("${jwt.refresh-expiration:604800000}")
     private long refreshExpiration;
+
+    @PostConstruct
+    public void validateConfig() {
+        if (secret == null || secret.isBlank()) {
+            log.error("JWT_SECRET environment variable is not set. Application cannot start.");
+            throw new IllegalStateException("JWT_SECRET must be configured");
+        }
+        if (secret.length() < 32) {
+            log.error("JWT_SECRET must be at least 32 characters long for HS256");
+            throw new IllegalStateException("JWT_SECRET must be at least 32 characters");
+        }
+        log.info("JWT secret configured successfully");
+    }
 
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

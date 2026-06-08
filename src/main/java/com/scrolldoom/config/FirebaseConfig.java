@@ -34,7 +34,7 @@ public class FirebaseConfig {
                     credentials = GoogleCredentials.fromStream(
                             new ByteArrayInputStream(credentialsJson.getBytes(StandardCharsets.UTF_8)));
                 } else if (credentialsPath != null && !credentialsPath.isBlank()) {
-                    log.info("Initializing Firebase with credentials from path: {}", credentialsPath);
+                    log.debug("Initializing Firebase with credentials from path: {}", credentialsPath);
                     credentials = GoogleCredentials.fromStream(new FileInputStream(credentialsPath));
                 } else {
                     // Try default location
