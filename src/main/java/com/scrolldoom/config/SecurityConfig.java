@@ -39,6 +39,8 @@ public class SecurityConfig {
             // CSRF disabled because this is a stateless JWT API — no cookie-based auth
             .csrf(csrf -> csrf.disable())
             .anonymous(anonymous -> anonymous.disable())
+            .formLogin(form -> form.disable())
+            .httpBasic(httpBasic -> httpBasic.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             // Enforce HTTPS when behind a proxy that sets X-Forwarded-Proto
             .requiresChannel(channel -> channel.anyRequest().requiresSecure())
