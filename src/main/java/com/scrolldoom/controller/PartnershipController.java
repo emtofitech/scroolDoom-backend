@@ -78,6 +78,20 @@ public class PartnershipController {
                 partnershipService.getActivePartnership(userId)));
     }
 
+    @DeleteMapping("/invite")
+    @Operation(summary = "Delete own pending invite",
+            description = "Deletes the current user's pending invite code if it has not been accepted yet.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Pending invite deleted"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+            @ApiResponse(responseCode = "404", description = "No pending invite found")
+    })
+    public ResponseEntity<Void> deleteOwnPendingInvite() {
+        ObjectId userId = userService.getCurrentUserId();
+        partnershipService.deleteOwnPendingInvite(userId);
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     @Operation(summary = "Dissolve a partnership",
             description = "Soft-deletes a partnership by setting its status to 'dissolved'.")

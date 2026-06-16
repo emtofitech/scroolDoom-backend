@@ -6,6 +6,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.Date;
 import java.util.Optional;
 
 @Repository
@@ -19,4 +20,6 @@ public interface PartnershipRepository extends MongoRepository<Partnership, Obje
 
     @Query("{$or: [{'senderUserId': ?0}, {'receiverUserId': ?0}], 'status': 'active'}")
     Optional<Partnership> findActivePartnership(ObjectId userId);
+
+    void deleteByStatusAndInviteExpiresAtBefore(String status, Date date);
 }

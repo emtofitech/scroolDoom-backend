@@ -10,6 +10,7 @@ import com.scrolldoom.model.User;
 import com.scrolldoom.repository.PartnershipRepository;
 import com.scrolldoom.repository.UserRepository;
 import org.bson.types.ObjectId;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -137,6 +138,17 @@ public class PartnershipService {
                 .orElseThrow(() -> new ResourceNotFoundException("Partner user not found"));
 
         return partner.getFcmToken();
+    }
+
+    public void deleteOwnPendingInvite(ObjectId userId) {
+        Partnership pending = partnershipRepository.findBySenderUserIdAndStatus(userId, "pending")
+                .orElseThrow(() -> new ResourceNotFoundException("No pending invite found"));
+        partnershipRepository.delete(pending);
+    }
+
+    @Scheduled(fixedRate = 3600000)
+    public void cleanupExpiredInvites() {
+        partnershipRepository.deleteByStatusAndInviteExpiresAtBefore("pending", new Date());
     }
 
     private String generateCode() {
