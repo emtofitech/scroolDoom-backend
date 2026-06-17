@@ -67,6 +67,66 @@ else:
 " 2>/dev/null || echo ""
 }
 
+check_field() {
+  local response="$1"
+  local field="$2"
+  local expected="$3"
+  local desc="$4"
+
+  local actual
+  actual=$(echo "$response" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+inner=d.get('data',d)
+if isinstance(inner,dict):
+    print(inner.get('$field','__MISSING__'))
+elif isinstance(inner,list) and len(inner)>0 and isinstance(inner[0],dict):
+    print(inner[0].get('$field','__MISSING__'))
+else:
+    print('__MISSING__')
+" 2>/dev/null || echo "__PARSE_ERR__")
+
+  if [ "$actual" = "$expected" ]; then
+    echo -e "    ${GREEN}✓ field $field=$actual${NC}"
+    return 0
+  else
+    echo -e "    ${RED}✗ $desc: field $field expected '$expected' got '$actual'${NC}"
+    FAILED=$((FAILED + 1))
+    return 1
+  fi
+}
+
+check_contains() {
+  local response="$1"
+  local field="$2"
+  local desc="$3"
+
+  local found
+  found=$(echo "$response" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+inner=d.get('data',d)
+if isinstance(inner,dict):
+    print('true' if '$field' in inner else 'false')
+elif isinstance(inner,list):
+    if len(inner)>0 and isinstance(inner[0],dict):
+        print('true' if '$field' in inner[0] else 'false')
+    else:
+        print('false')
+else:
+    print('false')
+" 2>/dev/null || echo "false")
+
+  if [ "$found" = "true" ]; then
+    echo -e "    ${GREEN}✓ contains $field${NC}"
+    return 0
+  else
+    echo -e "    ${RED}✗ $desc: missing field '$field'${NC}"
+    FAILED=$((FAILED + 1))
+    return 1
+  fi
+}
+
 # ============================================================
 # PHASE 0: Health
 # ============================================================
@@ -285,6 +345,12 @@ RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/status" \
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "GET /api/v1/limits/status (initial, not exceeded)" "200" "$BODY" "$STATUS"
+# Validate new lockout fields are present
+check_contains "$BODY" "blocked" "limits/status should have blocked"
+check_contains "$BODY" "breachThreshold" "limits/status should have breachThreshold"
+check_contains "$BODY" "breachesRemaining" "limits/status should have breachesRemaining"
+check_contains "$BODY" "blockedBy" "limits/status should have blockedBy"
+check_contains "$BODY" "lockedUntil" "limits/status should have lockedUntil"
 
 # Update limit
 if [ -n "$LIMIT_ID" ]; then
@@ -390,6 +456,9 @@ if [ -n "$INVITE_CODE" ]; then
   BODY=$(echo "$RESP" | head -n -1)
   test_endpoint "POST /api/v1/partnerships/accept (User 2 accepts → activated)" "200" "$BODY" "$STATUS"
   PARTNERSHIP_ID=$(save_value "$BODY" "id")
+  # Validate partnership response data
+  check_field "$BODY" "status" "active" "partnership status should be active"
+  check_contains "$BODY" "partner" "partnership should have partner object"
 fi
 
 # 6. User 1 GET /partnerships/me → 200 (now active)
@@ -444,6 +513,9 @@ if [ -n "$INSTA_LIMIT_ID" ]; then
   STATUS=$(echo "$RESP" | tail -1)
   BODY=$(echo "$RESP" | head -n -1)
   test_endpoint "GET /api/v1/limits/status (after breach, exceeded)" "200" "$BODY" "$STATUS"
+  # Validate exceeded state
+  check_field "$BODY" "exceeded" "True" "limit should be exceeded after breach"
+  check_contains "$BODY" "breachesRemaining" "breachesRemaining should exist after breach"
 
   # Cleanup
   RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/$INSTA_LIMIT_ID" \
@@ -663,6 +735,11 @@ RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/notifications?page=0&size=10" \
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "GET /api/v1/notifications (paginated)" "200" "$BODY" "$STATUS"
+# Validate Page structure
+check_contains "$BODY" "content" "notifications list should have content field"
+check_contains "$BODY" "totalElements" "notifications list should have totalElements"
+check_contains "$BODY" "totalPages" "notifications list should have totalPages"
+check_contains "$BODY" "number" "notifications list should have number"
 
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/notifications/unread-count" \
   -H "Authorization: Bearer $TOKEN")
@@ -681,6 +758,9 @@ RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/notifications/preferences" \
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "GET /api/v1/notifications/preferences (defaults)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "breachAlerts" "True" "default breachAlerts should be true"
+check_field "$BODY" "streakBroken" "True" "default streakBroken should be true"
+check_field "$BODY" "appLocked" "True" "default appLocked should be true"
 
 RESP=$(curl -s -w "\n%{http_code}" -X PUT "$BASE/api/v1/notifications/preferences" \
   -H "Authorization: Bearer $TOKEN" \
@@ -689,6 +769,8 @@ RESP=$(curl -s -w "\n%{http_code}" -X PUT "$BASE/api/v1/notifications/preference
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "PUT /api/v1/notifications/preferences (breachAlerts off)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "breachAlerts" "False" "breachAlerts should be false after toggle"
+check_field "$BODY" "streakBroken" "True" "streakBroken should remain true"
 
 RESP=$(curl -s -w "\n%{http_code}" -X PUT "$BASE/api/v1/notifications/preferences" \
   -H "Authorization: Bearer $TOKEN" \
@@ -737,6 +819,8 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits/blocked" \
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "POST /api/v1/limits/blocked (User 1 locks for partner)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "blockedBy" "partner" "locked app should be blockedBy=partner"
+check_field "$BODY" "packageName" "com.instagram.android" "locked app package should match"
 
 # 4. Verify User 2 sees the blocked app
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/blocked" \
@@ -744,6 +828,8 @@ RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/blocked" \
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "GET /api/v1/limits/blocked (User 2 sees locked app)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "blockedBy" "partner" "User 2 should see blockedBy=partner"
+check_field "$BODY" "packageName" "com.instagram.android" "User 2 should see the locked package"
 
 # 5. User 2 unlocks the app
 RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/blocked/com.instagram.android" \
