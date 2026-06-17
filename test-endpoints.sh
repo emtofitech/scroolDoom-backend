@@ -10,6 +10,9 @@ SESSION_ID=""
 DELIVERY_ID=""
 INVITE_CODE=""
 PARTNERSHIP_ID=""
+TOKEN2=""
+REFRESH_TOKEN2=""
+PARTNER_LIMIT_ID=""
 
 PASSED=0
 FAILED=0
@@ -137,6 +140,31 @@ if [ -n "$NEW_TOKEN" ]; then
   TOKEN="$NEW_TOKEN"
 fi
 
+# 6. Register second user (for partnership tests)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{"firebaseUid":"curl-test-user-002","displayName":"Curl Partner User","email":"partner@example.com","password":"PartnerPass123!"}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/auth/register (second user)" "201" "$BODY" "$STATUS"
+
+# 7. Login second user
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/auth/login-with-password" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"partner@example.com","password":"PartnerPass123!"}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/auth/login-with-password (second user)" "200" "$BODY" "$STATUS"
+TOKEN2=$(save_value "$BODY" "token")
+REFRESH_TOKEN2=$(save_value "$BODY" "refreshToken")
+
+# Debug: verify second token was captured
+if [ -z "$TOKEN2" ]; then
+  echo -e "${RED}  FATAL: No access token captured from second user login${NC}"
+  echo "  Response body: $BODY"
+  exit 1
+fi
+
 # Error paths — auth
 echo -e "\n${YELLOW}── Auth Error Paths ──${NC}"
 
@@ -238,10 +266,10 @@ echo -e "\n${YELLOW}═══ Phase 4: App Limits ═══${NC}"
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"packageName":"com.instagram.android","appLabel":"Instagram","dailyLimitMinutes":30}')
+  -d '{"packageName":"com.instagram.android","appLabel":"Instagram","dailyLimitMinutes":30,"breachThreshold":3}')
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-test_endpoint "POST /api/v1/limits (create)" "201" "$BODY" "$STATUS"
+test_endpoint "POST /api/v1/limits (create, breachThreshold=3)" "201" "$BODY" "$STATUS"
 LIMIT_ID=$(save_value "$BODY" "id")
 
 # Get all limits
@@ -313,43 +341,35 @@ if [ -n "$LIMIT_ID" ]; then
 fi
 
 # ============================================================
-# PHASE 5: Partnerships
+# PHASE 5: Partnerships (User 1 invites User 2)
 # ============================================================
 echo -e "\n${YELLOW}═══ Phase 5: Partnerships ═══${NC}"
 
-# Generate invite
+# 1. User 1 generates invite
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/partnerships/invite" \
   -H "Authorization: Bearer $TOKEN")
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-test_endpoint "POST /api/v1/partnerships/invite (generate)" "201" "$BODY" "$STATUS"
+test_endpoint "POST /api/v1/partnerships/invite (User 1 generates)" "201" "$BODY" "$STATUS"
 INVITE_CODE=$(save_value "$BODY" "inviteCode")
-PARTNERSHIP_ID=$(save_value "$BODY" "id")
 
-# Get active partnership — invite is pending, not active → 404
-RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/partnerships/me" \
-  -H "Authorization: Bearer $TOKEN")
-STATUS=$(echo "$RESP" | tail -1)
-BODY=$(echo "$RESP" | head -n -1)
-test_endpoint "GET /api/v1/partnerships/me (pending invite, no active → 404)" "404" "$BODY" "$STATUS"
-
-# Duplicate invite → 409
+# 2. User 1 duplicate invite → 409
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/partnerships/invite" \
   -H "Authorization: Bearer $TOKEN")
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-test_endpoint "POST /api/v1/partnerships/invite (duplicate → 409)" "409" "$BODY" "$STATUS"
+test_endpoint "POST /api/v1/partnerships/invite (User 1 duplicate → 409)" "409" "$BODY" "$STATUS"
 
-# Accept with invalid code → 404
+# 3. User 2 accepts with invalid code → 404
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/partnerships/accept" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $TOKEN2" \
   -H "Content-Type: application/json" \
   -d '{"inviteCode":"ZZZZZZ"}')
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-test_endpoint "POST /api/v1/partnerships/accept (invalid code → 404)" "404" "$BODY" "$STATUS"
+test_endpoint "POST /api/v1/partnerships/accept (User 2 invalid code → 404)" "404" "$BODY" "$STATUS"
 
-# Accept own invite → 409 (self-invite)
+# 4. User 1 tries to accept own invite → 409
 if [ -n "$INVITE_CODE" ]; then
   RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/partnerships/accept" \
     -H "Authorization: Bearer $TOKEN" \
@@ -357,17 +377,41 @@ if [ -n "$INVITE_CODE" ]; then
     -d "{\"inviteCode\":\"$INVITE_CODE\"}")
   STATUS=$(echo "$RESP" | tail -1)
   BODY=$(echo "$RESP" | head -n -1)
-  test_endpoint "POST /api/v1/partnerships/accept (own invite → 409)" "409" "$BODY" "$STATUS"
+  test_endpoint "POST /api/v1/partnerships/accept (User 1 own invite → 409)" "409" "$BODY" "$STATUS"
 fi
 
-# Dissolve partnership (if one exists)
-if [ -n "$PARTNERSHIP_ID" ]; then
-  RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/partnerships/$PARTNERSHIP_ID" \
-    -H "Authorization: Bearer $TOKEN")
+# 5. User 2 accepts the invite → 200 (partnership activated)
+if [ -n "$INVITE_CODE" ]; then
+  RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/partnerships/accept" \
+    -H "Authorization: Bearer $TOKEN2" \
+    -H "Content-Type: application/json" \
+    -d "{\"inviteCode\":\"$INVITE_CODE\"}")
   STATUS=$(echo "$RESP" | tail -1)
   BODY=$(echo "$RESP" | head -n -1)
-  test_endpoint "DELETE /api/v1/partnerships/$PARTNERSHIP_ID (dissolve)" "204" "$BODY" "$STATUS"
+  test_endpoint "POST /api/v1/partnerships/accept (User 2 accepts → activated)" "200" "$BODY" "$STATUS"
+  PARTNERSHIP_ID=$(save_value "$BODY" "id")
 fi
+
+# 6. User 1 GET /partnerships/me → 200 (now active)
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/partnerships/me" \
+  -H "Authorization: Bearer $TOKEN")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/partnerships/me (User 1, active)" "200" "$BODY" "$STATUS"
+
+# 7. User 2 GET /partnerships/me → 200
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/partnerships/me" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/partnerships/me (User 2, active)" "200" "$BODY" "$STATUS"
+
+# 8. User 1 delete own pending invite (no pending invite, only active → 404)
+RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/partnerships/invite" \
+  -H "Authorization: Bearer $TOKEN")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "DELETE /api/v1/partnerships/invite (no pending → 404)" "404" "$BODY" "$STATUS"
 
 # ============================================================
 # PHASE 6: Breaches
@@ -388,7 +432,7 @@ BREACH_ID=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); 
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"packageName":"com.instagram.android","appLabel":"Instagram","dailyLimitMinutes":30}')
+  -d '{"packageName":"com.instagram.android","appLabel":"Instagram","dailyLimitMinutes":30,"breachThreshold":3}')
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 INSTA_LIMIT_ID=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); inner=d.get('data',d); print(inner.get('id','') if isinstance(inner,dict) else '')" 2>/dev/null || echo "")
@@ -450,27 +494,19 @@ if [ -n "$BREACH_ID" ]; then
   test_endpoint "PATCH /api/v1/breaches/$BREACH_ID/acknowledge" "200" "$BODY" "$STATUS"
 fi
 
-# Get partner breaches (may fail if no partnership — that's OK)
+# Get partner breaches (User 2 sees User 1's breaches via partnership)
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/breaches/partner?page=0&size=10" \
-  -H "Authorization: Bearer $TOKEN")
+  -H "Authorization: Bearer $TOKEN2")
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-if [ "$STATUS" = "200" ]; then
-  test_endpoint "GET /api/v1/breaches/partner (list)" "200" "$BODY" "$STATUS"
-else
-  test_endpoint "GET /api/v1/breaches/partner (no partnership → expected error)" "404" "$BODY" "$STATUS"
-fi
+test_endpoint "GET /api/v1/breaches/partner (User 2 sees User 1 breaches)" "200" "$BODY" "$STATUS"
 
 # Get partner breaches by type
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/breaches/partner/type/SCREEN_TIME_EXCEEDED?page=0&size=10" \
-  -H "Authorization: Bearer $TOKEN")
+  -H "Authorization: Bearer $TOKEN2")
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-if [ "$STATUS" = "200" ]; then
-  test_endpoint "GET /api/v1/breaches/partner/type/SCREEN_TIME_EXCEEDED" "200" "$BODY" "$STATUS"
-else
-  test_endpoint "GET /api/v1/breaches/partner/type/SCREEN_TIME_EXCEEDED (no partnership → expected error)" "404" "$BODY" "$STATUS"
-fi
+test_endpoint "GET /api/v1/breaches/partner/type/SCREEN_TIME_EXCEEDED (User 2)" "200" "$BODY" "$STATUS"
 
 # Error paths — breaches
 echo -e "\n${YELLOW}── Breach Error Paths ──${NC}"
@@ -509,14 +545,10 @@ BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "GET /api/v1/streaks/me" "200" "$BODY" "$STATUS"
 
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/streaks/partner" \
-  -H "Authorization: Bearer $TOKEN")
+  -H "Authorization: Bearer $TOKEN2")
 STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
-if [ "$STATUS" = "200" ]; then
-  test_endpoint "GET /api/v1/streaks/partner" "200" "$BODY" "$STATUS"
-else
-  test_endpoint "GET /api/v1/streaks/partner (no partnership → expected error)" "404" "$BODY" "$STATUS"
-fi
+test_endpoint "GET /api/v1/streaks/partner (User 2 sees User 1 streak)" "200" "$BODY" "$STATUS"
 
 # ============================================================
 # PHASE 8: Usage Tracking
@@ -622,7 +654,152 @@ BODY=$(echo "$RESP" | head -n -1 | head -c 100)
 test_endpoint "GET /v3/api-docs (spec)" "200" "$BODY" "$STATUS"
 
 # ============================================================
-# SUMMARY
+# PHASE 10: Notifications
+# ============================================================
+echo -e "\n${YELLOW}═══ Phase 10: Notifications ═══${NC}"
+
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/notifications?page=0&size=10" \
+  -H "Authorization: Bearer $TOKEN")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/notifications (paginated)" "200" "$BODY" "$STATUS"
+
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/notifications/unread-count" \
+  -H "Authorization: Bearer $TOKEN")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/notifications/unread-count" "200" "$BODY" "$STATUS"
+
+RESP=$(curl -s -w "\n%{http_code}" -X PUT "$BASE/api/v1/notifications/read-all" \
+  -H "Authorization: Bearer $TOKEN")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "PUT /api/v1/notifications/read-all" "200" "$BODY" "$STATUS"
+
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/notifications/preferences" \
+  -H "Authorization: Bearer $TOKEN")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/notifications/preferences (defaults)" "200" "$BODY" "$STATUS"
+
+RESP=$(curl -s -w "\n%{http_code}" -X PUT "$BASE/api/v1/notifications/preferences" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"breachAlerts":false,"streakBroken":true,"appLocked":true}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "PUT /api/v1/notifications/preferences (breachAlerts off)" "200" "$BODY" "$STATUS"
+
+RESP=$(curl -s -w "\n%{http_code}" -X PUT "$BASE/api/v1/notifications/preferences" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"breachAlerts":true}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "PUT /api/v1/notifications/preferences (breachAlerts back on)" "200" "$BODY" "$STATUS"
+
+# Error path — invalid preference field (should still 200 via partial map)
+RESP=$(curl -s -w "\n%{http_code}" -X PUT "$BASE/api/v1/notifications/preferences" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"unknownField":false}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "PUT /api/v1/notifications/preferences (unknown field ignored)" "200" "$BODY" "$STATUS"
+
+# ============================================================
+# PHASE 11: Blocked Apps / Lockout
+# ============================================================
+echo -e "\n${YELLOW}═══ Phase 11: Blocked Apps / Lockout ═══${NC}"
+
+# 1. User 2 creates a limit with low breachThreshold for lockout testing
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits" \
+  -H "Authorization: Bearer $TOKEN2" \
+  -H "Content-Type: application/json" \
+  -d '{"packageName":"com.instagram.android","appLabel":"Instagram","dailyLimitMinutes":30,"breachThreshold":2}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits (User 2, breachThreshold=2)" "201" "$BODY" "$STATUS"
+PARTNER_LIMIT_ID=$(save_value "$BODY" "id")
+
+# 2. List blocked apps (should be empty)
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/blocked" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/limits/blocked (User 2, empty)" "200" "$BODY" "$STATUS"
+
+# 3. User 1 locks an app for partner (User 2)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits/blocked" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"packageName":"com.instagram.android","appLabel":"Instagram"}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits/blocked (User 1 locks for partner)" "200" "$BODY" "$STATUS"
+
+# 4. Verify User 2 sees the blocked app
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/blocked" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/limits/blocked (User 2 sees locked app)" "200" "$BODY" "$STATUS"
+
+# 5. User 2 unlocks the app
+RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/blocked/com.instagram.android" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "DELETE /api/v1/limits/blocked/com.instagram.android (User 2 unlocks)" "204" "$BODY" "$STATUS"
+
+# 6. Verify blocked list is empty again
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/blocked" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/limits/blocked (User 2, empty after unlock)" "200" "$BODY" "$STATUS"
+
+# 7. Delete non-existent blocked app (idempotent → 204)
+RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/blocked/com.nonexistent.app" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "DELETE /api/v1/limits/blocked/nonexistent (idempotent → 204)" "204" "$BODY" "$STATUS"
+
+# 8. Partner lock without partnership → 404 (generate new invite but don't accept)
+# First create a pending invite for User 1 (will fail because they already have active partnership)
+# Actually User 1 has active partnership, so we'll use a different approach.
+# We can test with no auth → 403
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits/blocked" \
+  -H "Content-Type: application/json" \
+  -d '{"packageName":"com.test","appLabel":"Test"}')
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits/blocked (no auth → 403)" "403" "$BODY" "$STATUS"
+
+# 9. Cleanup User 2's limit
+if [ -n "$PARTNER_LIMIT_ID" ]; then
+  RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/$PARTNER_LIMIT_ID" \
+    -H "Authorization: Bearer $TOKEN2")
+  STATUS=$(echo "$RESP" | tail -1)
+  BODY=$(echo "$RESP" | head -n -1)
+  test_endpoint "DELETE /api/v1/limits/$PARTNER_LIMIT_ID (User 2 cleanup)" "204" "$BODY" "$STATUS"
+fi
+
+# ============================================================
+# PHASE 12: Cleanup — dissolve partnership
+# ============================================================
+echo -e "\n${YELLOW}═══ Phase 12: Cleanup ═══${NC}"
+
+if [ -n "$PARTNERSHIP_ID" ]; then
+  RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/partnerships/$PARTNERSHIP_ID" \
+    -H "Authorization: Bearer $TOKEN")
+  STATUS=$(echo "$RESP" | tail -1)
+  BODY=$(echo "$RESP" | head -n -1)
+  test_endpoint "DELETE /api/v1/partnerships/$PARTNERSHIP_ID (dissolve)" "204" "$BODY" "$STATUS"
+fi
+
+# ============================================================
 # ============================================================
 echo -e "\n${YELLOW}══════════════════════════════════════════${NC}"
 echo -e "  ${GREEN}Passed: $PASSED${NC}  ${RED}Failed: $FAILED${NC}  Total: $TOTAL"
