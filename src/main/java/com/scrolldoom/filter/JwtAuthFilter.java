@@ -53,8 +53,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 filterChain.doFilter(request, response);
                 return;
             } catch (Exception e) {
-                sendUnauthorized(response, "Invalid Firebase token");
-                return;
+                // Not a Firebase token — fall through to JWT validation
             }
         }
 
