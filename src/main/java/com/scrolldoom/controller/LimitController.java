@@ -2,9 +2,11 @@ package com.scrolldoom.controller;
 
 import com.scrolldoom.dto.ApiEnvelope;
 import com.scrolldoom.dto.AppLimitResponse;
+import com.scrolldoom.dto.BlockAppRequest;
 import com.scrolldoom.dto.CreateLimitRequest;
 import com.scrolldoom.dto.LimitStatusResponse;
 import com.scrolldoom.dto.UpdateLimitRequest;
+import com.scrolldoom.model.BlockedApp;
 import com.scrolldoom.service.AppLimitService;
 import com.scrolldoom.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -50,7 +52,7 @@ public class LimitController {
 
     @GetMapping("/status")
     @Operation(summary = "Get limit statuses",
-            description = "Returns whether each app limit has been exceeded today, based on recorded screen-time breaches.")
+            description = "Returns whether each app limit has been exceeded today, including lockout state.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List of limit statuses"),
             @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
@@ -58,6 +60,45 @@ public class LimitController {
     public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<List<LimitStatusResponse>>> getLimitStatuses() {
         ObjectId userId = userService.getCurrentUserId();
         return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(appLimitService.getLimitStatuses(userId)));
+    }
+
+    @GetMapping("/blocked")
+    @Operation(summary = "List blocked apps",
+            description = "Returns all currently locked apps for the current user.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of blocked apps"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
+    })
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<List<BlockedApp>>> listBlockedApps() {
+        ObjectId userId = userService.getCurrentUserId();
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(appLimitService.listBlockedApps(userId)));
+    }
+
+    @PostMapping("/blocked")
+    @Operation(summary = "Lock an app for your partner",
+            description = "Creates a block for your partner's app. The partner will be notified via push.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "App locked for partner"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+            @ApiResponse(responseCode = "404", description = "No active partnership found")
+    })
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<BlockedApp>> lockPartnerApp(
+            @Valid @RequestBody BlockAppRequest req) {
+        ObjectId userId = userService.getCurrentUserId();
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(appLimitService.lockPartnerApp(userId, req)));
+    }
+
+    @DeleteMapping("/blocked/{packageName}")
+    @Operation(summary = "Unlock an app",
+            description = "Removes a lock from an app for the current user.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "App unlocked"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid JWT")
+    })
+    public ResponseEntity<Void> unlockApp(@PathVariable String packageName) {
+        ObjectId userId = userService.getCurrentUserId();
+        appLimitService.unlockApp(userId, packageName);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping

@@ -22,4 +22,7 @@ public class CreateLimitRequest {
     @Max(1440)
     @Schema(description = "Daily time limit in minutes (1–1440)", example = "30")
     private int dailyLimitMinutes;
+
+    @Schema(description = "Number of breaches before auto-lockout (default 3)", example = "3")
+    private Integer breachThreshold;
 }

@@ -16,9 +16,9 @@ import java.util.Date;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "appLimits")
+@Document(collection = "blocked_apps")
 @CompoundIndex(name = "userId_packageName", def = "{'userId': 1, 'packageName': 1}", unique = true)
-public class AppLimit {
+public class BlockedApp {
 
     @Id
     private ObjectId id;
@@ -26,17 +26,17 @@ public class AppLimit {
     @Indexed
     private ObjectId userId;
 
-    @Indexed
     private String packageName;
 
     private String appLabel;
 
-    private int dailyLimitMinutes;
+    private Date blockedAt;
 
-    @Builder.Default
-    private int breachThreshold = 3;
+    private String blockedBy;
 
-    private Date lockedUntil;
+    private Date expiresAt;
 
-    private Date updatedAt;
+    private int breachCount;
+
+    private Date lastBreachAt;
 }

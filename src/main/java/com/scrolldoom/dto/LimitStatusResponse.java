@@ -5,10 +5,12 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.Date;
+
 @Data
 @Builder
 @AllArgsConstructor
-@Schema(description = "Daily limit status for an app, indicating whether it has been exceeded")
+@Schema(description = "Daily limit status for an app, including lockout state")
 public class LimitStatusResponse {
 
     @Schema(description = "AppLimit MongoDB ObjectId as hex string", example = "664a1b2c3d4e5f6a7b8c9d0e")
@@ -31,4 +33,21 @@ public class LimitStatusResponse {
 
     @Schema(description = "Remaining minutes (dailyLimitMinutes - actualMinutes; negative if exceeded)")
     private int remainingMinutes;
+
+    @Schema(description = "Number of breaches before auto-lockout", example = "3")
+    @Builder.Default
+    private int breachThreshold = 3;
+
+    @Schema(description = "Whether the app is currently locked")
+    private boolean blocked;
+
+    @Schema(description = "Who locked the app: 'partner' or 'auto'")
+    private String blockedBy;
+
+    @Schema(description = "When the auto-lockout expires (null for partner locks)")
+    private Date lockedUntil;
+
+    @Schema(description = "How many more breaches are allowed before auto-lockout (0 if already locked)")
+    @Builder.Default
+    private int breachesRemaining = 0;
 }

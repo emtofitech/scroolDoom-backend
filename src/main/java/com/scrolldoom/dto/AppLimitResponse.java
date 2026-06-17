@@ -25,6 +25,10 @@ public class AppLimitResponse {
     @Schema(description = "Daily time limit in minutes", example = "30")
     private int dailyLimitMinutes;
 
+    @Schema(description = "Number of breaches before auto-lockout", example = "3")
+    @Builder.Default
+    private int breachThreshold = 3;
+
     @Schema(description = "Last update timestamp")
     private Date updatedAt;
 }

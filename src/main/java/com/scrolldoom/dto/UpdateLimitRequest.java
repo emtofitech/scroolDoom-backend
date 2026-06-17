@@ -13,4 +13,7 @@ public class UpdateLimitRequest {
     @Max(1440)
     @Schema(description = "Updated daily time limit in minutes (1–1440)", example = "45")
     private int dailyLimitMinutes;
+
+    @Schema(description = "Number of breaches before auto-lockout", example = "3")
+    private Integer breachThreshold;
 }

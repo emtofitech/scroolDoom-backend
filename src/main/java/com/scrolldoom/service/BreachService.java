@@ -3,9 +3,13 @@ package com.scrolldoom.service;
 import com.scrolldoom.dto.BreachEventResponse;
 import com.scrolldoom.dto.CreateBreachRequest;
 import com.scrolldoom.exception.ResourceNotFoundException;
+import com.scrolldoom.model.AppLimit;
+import com.scrolldoom.model.BlockedApp;
 import com.scrolldoom.model.BreachEvent;
 import com.scrolldoom.model.Partnership;
 import com.scrolldoom.model.User;
+import com.scrolldoom.repository.AppLimitRepository;
+import com.scrolldoom.repository.BlockedAppRepository;
 import com.scrolldoom.repository.BreachEventRepository;
 import com.scrolldoom.repository.PartnershipRepository;
 import com.scrolldoom.repository.UserRepository;
@@ -31,6 +35,8 @@ public class BreachService {
     private final UserRepository userRepository;
     private final PartnershipService partnershipService;
     private final NotificationService notificationService;
+    private final AppLimitRepository appLimitRepository;
+    private final BlockedAppRepository blockedAppRepository;
 
     private static final String SEVERITY_LOW = "LOW";
     private static final String SEVERITY_MEDIUM = "MEDIUM";
@@ -40,12 +46,16 @@ public class BreachService {
                          PartnershipRepository partnershipRepository,
                          UserRepository userRepository,
                          PartnershipService partnershipService,
-                         NotificationService notificationService) {
+                         NotificationService notificationService,
+                         AppLimitRepository appLimitRepository,
+                         BlockedAppRepository blockedAppRepository) {
         this.breachEventRepository = breachEventRepository;
         this.partnershipRepository = partnershipRepository;
         this.userRepository = userRepository;
         this.partnershipService = partnershipService;
         this.notificationService = notificationService;
+        this.appLimitRepository = appLimitRepository;
+        this.blockedAppRepository = blockedAppRepository;
     }
 
     public BreachEventResponse reportBreach(ObjectId userId, CreateBreachRequest req) {
@@ -92,6 +102,7 @@ public class BreachService {
         log.info("Saved screen-time breach with id={}", saved.getId());
 
         try {
+            checkAutoLockout(userId, req.getPackageName(), req.getAppLabel());
             notifyPartner(saved, userId, req.getAppLabel(), req.getActualMinutes(), req.getLimitMinutes(), null);
         } catch (Exception e) {
             log.error("Failed to notify partner for new breach: {}", e.getMessage());
@@ -265,6 +276,66 @@ public class BreachService {
             return partnership != null ? partnership.getId() : null;
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private void checkAutoLockout(ObjectId userId, String packageName, String appLabel) {
+        try {
+            AppLimit limit = appLimitRepository.findByUserIdAndPackageName(userId, packageName).orElse(null);
+            if (limit == null || limit.getBreachThreshold() <= 0) return;
+
+            Date todayStart = getStartOfDay(new Date());
+            Date todayEnd = getEndOfDay(new Date());
+
+            long todayBreaches = breachEventRepository
+                    .findByUserIdAndPackageNameAndBreachedAtBetween(userId, packageName, todayStart, todayEnd)
+                    .stream()
+                    .filter(e -> BreachEvent.BREACH_SCREEN_TIME.equals(e.getBreachType()))
+                    .count();
+
+            if (todayBreaches < limit.getBreachThreshold()) return;
+
+            boolean alreadyBlocked = blockedAppRepository
+                    .findByUserIdAndPackageName(userId, packageName).isPresent();
+            if (alreadyBlocked) return;
+
+            Date endOfDay = getEndOfDay(new Date());
+
+            BlockedApp blocked = BlockedApp.builder()
+                    .userId(userId)
+                    .packageName(packageName)
+                    .appLabel(appLabel)
+                    .blockedAt(new Date())
+                    .blockedBy("auto")
+                    .expiresAt(endOfDay)
+                    .breachCount((int) todayBreaches)
+                    .lastBreachAt(new Date())
+                    .build();
+            blockedAppRepository.save(blocked);
+
+            limit.setLockedUntil(endOfDay);
+            appLimitRepository.save(limit);
+
+            log.info("Auto-locked app {} for user {} after {} breaches", packageName, userId, todayBreaches);
+
+            User user = userRepository.findById(userId).orElse(null);
+            Partnership partnership = partnershipRepository.findActivePartnership(userId).orElse(null);
+            if (user != null && partnership != null) {
+                ObjectId partnerId = partnership.getSenderUserId().equals(userId)
+                        ? partnership.getReceiverUserId()
+                        : partnership.getSenderUserId();
+                User partner = userRepository.findById(partnerId).orElse(null);
+                if (partner != null && partner.getFcmToken() != null && !partner.getFcmToken().isBlank()) {
+                    notificationService.sendBreachNotification(
+                            partner.getFcmToken(), partner.getFirebaseUid(),
+                            "App Locked",
+                            String.format("%s is locked out of %s for the rest of the day",
+                                    user.getDisplayName(), appLabel));
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to check/apply auto-lockout for userId={}, packageName={}: {}",
+                    userId, packageName, e.getMessage(), e);
         }
     }
 
