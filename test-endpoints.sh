@@ -13,6 +13,8 @@ PARTNERSHIP_ID=""
 TOKEN2=""
 REFRESH_TOKEN2=""
 PARTNER_LIMIT_ID=""
+AUTO_LOCK_TWITTER_ID=""
+AUTO_LOCK_FACEBOOK_ID=""
 
 PASSED=0
 FAILED=0
@@ -863,14 +865,177 @@ STATUS=$(echo "$RESP" | tail -1)
 BODY=$(echo "$RESP" | head -n -1)
 test_endpoint "POST /api/v1/limits/blocked (no auth → 403)" "403" "$BODY" "$STATUS"
 
-# 9. Cleanup User 2's limit
-if [ -n "$PARTNER_LIMIT_ID" ]; then
-  RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/$PARTNER_LIMIT_ID" \
-    -H "Authorization: Bearer $TOKEN2")
-  STATUS=$(echo "$RESP" | tail -1)
-  BODY=$(echo "$RESP" | head -n -1)
-  test_endpoint "DELETE /api/v1/limits/$PARTNER_LIMIT_ID (User 2 cleanup)" "204" "$BODY" "$STATUS"
+# ============================================================
+# Auto-Lock tests
+# ============================================================
+echo -e "\n${YELLOW}── Auto-Lock Tests ──${NC}"
+
+# 9. Create limit for User 2 with breachThreshold=1
+TWITTER_PKG="com.twitter.android"
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits" \
+  -H "Authorization: Bearer $TOKEN2" \
+  -H "Content-Type: application/json" \
+  -d "{\"packageName\":\"$TWITTER_PKG\",\"appLabel\":\"Twitter\",\"dailyLimitMinutes\":30,\"breachThreshold\":1}")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits (User 2, Twitter, threshold=1)" "201" "$BODY" "$STATUS"
+AUTO_LOCK_TWITTER_ID=$(save_value "$BODY" "id")
+
+# 10. Auto-lock with no breaches yet → threshold not reached
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits/$TWITTER_PKG/auto-lock" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits/{package}/auto-lock (User 2, 0 breaches)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "locked" "False" "should not lock with 0 breaches"
+check_contains "$BODY" "message" "auto-lock response should have message"
+
+# 11. Report a screen-time breach for User 2 (triggers auto-lock internally)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/breaches/screen-time" \
+  -H "Authorization: Bearer $TOKEN2" \
+  -H "Content-Type: application/json" \
+  -d "{\"packageName\":\"$TWITTER_PKG\",\"appLabel\":\"Twitter\",\"limitMinutes\":30,\"actualMinutes\":45}")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/breaches/screen-time (User 2, Twitter, trigger auto-lock)" "201" "$BODY" "$STATUS"
+
+# 12. Auto-lock again → now locked (breach met threshold)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits/$TWITTER_PKG/auto-lock" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits/{package}/auto-lock (User 2, after breach, locked)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "locked" "True" "should lock after reaching threshold"
+check_contains "$BODY" "blockedApp" "response should contain blockedApp when locked"
+check_contains "$BODY" "message" "response should have message"
+
+# Validate blocked app fields via nested field check
+BLOCKED_BY=$(echo "$BODY" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+inner=d.get('data',d)
+ba=inner.get('blockedApp',{})
+print(ba.get('blockedBy','__MISSING__'))
+" 2>/dev/null || echo "__PARSE_ERR__")
+if [ "$BLOCKED_BY" = "auto" ]; then
+  echo -e "    ${GREEN}✓ blockedApp.blockedBy=auto${NC}"
+else
+  echo -e "    ${RED}✗ blockedApp.blockedBy expected 'auto' got '$BLOCKED_BY'${NC}"
+  FAILED=$((FAILED + 1))
 fi
+
+EXPIRES=$(echo "$BODY" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+inner=d.get('data',d)
+ba=inner.get('blockedApp',{})
+print(ba.get('expiresAt','__MISSING__'))
+" 2>/dev/null || echo "__PARSE_ERR__")
+if [ "$EXPIRES" != "__MISSING__" ] && [ "$EXPIRES" != "" ]; then
+  echo -e "    ${GREEN}✓ blockedApp.expiresAt present${NC}"
+else
+  echo -e "    ${RED}✗ blockedApp.expiresAt missing or empty${NC}"
+  FAILED=$((FAILED + 1))
+fi
+
+# 13. Verify blocked list shows the auto-locked app
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/api/v1/limits/blocked" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "GET /api/v1/limits/blocked (User 2, auto-locked app visible)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "blockedBy" "auto" "auto-locked app should show blockedBy=auto"
+check_field "$BODY" "packageName" "$TWITTER_PKG" "blocked app package should match"
+
+# 14. Auto-lock again → idempotent, already locked
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits/$TWITTER_PKG/auto-lock" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits/{package}/auto-lock (User 2, already locked, idempotent)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "locked" "True" "should still be locked on repeat call"
+# Python check for "already locked" in message
+MSG_HAS_ALREADY=$(echo "$BODY" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+inner=d.get('data',d)
+msg=inner.get('message','')
+print('true' if 'already' in msg.lower() else 'false')
+" 2>/dev/null || echo "false")
+if [ "$MSG_HAS_ALREADY" = "true" ]; then
+  echo -e "    ${GREEN}✓ message indicates already locked${NC}"
+else
+  echo -e "    ${RED}✗ message should indicate already locked${NC}"
+  FAILED=$((FAILED + 1))
+fi
+
+# 15. Unlock the app
+RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/blocked/$TWITTER_PKG" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "DELETE /api/v1/limits/blocked/$TWITTER_PKG (User 2, unlock)" "204" "$BODY" "$STATUS"
+
+# 16. Auto-lock on package with no AppLimit → 404
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits/com.nonexistent.app/auto-lock" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits/{package}/auto-lock (no limit → 404)" "404" "$BODY" "$STATUS"
+
+# 17. Create another limit with threshold=3, report 1 breach → not locked
+FB_PKG="com.facebook.android"
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits" \
+  -H "Authorization: Bearer $TOKEN2" \
+  -H "Content-Type: application/json" \
+  -d "{\"packageName\":\"$FB_PKG\",\"appLabel\":\"Facebook\",\"dailyLimitMinutes\":30,\"breachThreshold\":3}")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits (User 2, Facebook, threshold=3)" "201" "$BODY" "$STATUS"
+AUTO_LOCK_FACEBOOK_ID=$(save_value "$BODY" "id")
+
+# Report 1 breach
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/breaches/screen-time" \
+  -H "Authorization: Bearer $TOKEN2" \
+  -H "Content-Type: application/json" \
+  -d "{\"packageName\":\"$FB_PKG\",\"appLabel\":\"Facebook\",\"limitMinutes\":30,\"actualMinutes\":45}")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/breaches/screen-time (User 2, Facebook, 1 breach)" "201" "$BODY" "$STATUS"
+
+# Auto-lock should say not reached (1/3)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/limits/$FB_PKG/auto-lock" \
+  -H "Authorization: Bearer $TOKEN2")
+STATUS=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | head -n -1)
+test_endpoint "POST /api/v1/limits/{package}/auto-lock (User 2, 1/3 breaches)" "200" "$BODY" "$STATUS"
+check_field "$BODY" "locked" "False" "should not lock with only 1/3 breaches"
+MSG_REMAINING=$(echo "$BODY" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+inner=d.get('data',d)
+msg=inner.get('message','')
+print('true' if 'remaining' in msg.lower() else 'false')
+" 2>/dev/null || echo "false")
+if [ "$MSG_REMAINING" = "true" ]; then
+  echo -e "    ${GREEN}✓ message mentions remaining breaches${NC}"
+else
+  echo -e "    ${RED}✗ message should mention remaining breaches${NC}"
+  FAILED=$((FAILED + 1))
+fi
+
+# 18. Cleanup all User 2's limits
+echo -e "\n${YELLOW}── Auto-Lock Cleanup ──${NC}"
+
+for LID in "$PARTNER_LIMIT_ID" "$AUTO_LOCK_TWITTER_ID" "$AUTO_LOCK_FACEBOOK_ID"; do
+  if [ -n "$LID" ]; then
+    RESP=$(curl -s -w "\n%{http_code}" -X DELETE "$BASE/api/v1/limits/$LID" \
+      -H "Authorization: Bearer $TOKEN2")
+    STATUS=$(echo "$RESP" | tail -1)
+    BODY=$(echo "$RESP" | head -n -1)
+    test_endpoint "DELETE /api/v1/limits/$LID (User 2 cleanup)" "204" "$BODY" "$STATUS"
+  fi
+done
 
 # ============================================================
 # PHASE 12: Cleanup — dissolve partnership
