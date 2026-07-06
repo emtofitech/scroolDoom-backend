@@ -2,6 +2,7 @@ package com.scrolldoom.controller;
 
 import com.scrolldoom.dto.ApiEnvelope;
 import com.scrolldoom.dto.AppLimitResponse;
+import com.scrolldoom.dto.AutoLockResponse;
 import com.scrolldoom.dto.BlockAppRequest;
 import com.scrolldoom.dto.CreateLimitRequest;
 import com.scrolldoom.dto.LimitStatusResponse;
@@ -99,6 +100,22 @@ public class LimitController {
         ObjectId userId = userService.getCurrentUserId();
         appLimitService.unlockApp(userId, packageName);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{packageName}/auto-lock")
+    @Operation(summary = "Auto-lock an app when threshold reached",
+            description = "Locks an app with midnight expiry when the daily breach count meets the configured threshold. " +
+                    "Returns the current lock state. Does nothing if already locked.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Auto-lock result (locked or not)"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+            @ApiResponse(responseCode = "404", description = "No app limit found for this package")
+    })
+    public ResponseEntity<com.scrolldoom.dto.ApiEnvelope<AutoLockResponse>> autoLockApp(
+            @PathVariable String packageName) {
+        ObjectId userId = userService.getCurrentUserId();
+        return ResponseEntity.ok(com.scrolldoom.dto.ApiEnvelope.ok(
+                appLimitService.autoLockIfThresholdReached(userId, packageName)));
     }
 
     @PostMapping

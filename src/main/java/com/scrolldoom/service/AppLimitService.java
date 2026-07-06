@@ -1,6 +1,7 @@
 package com.scrolldoom.service;
 
 import com.scrolldoom.dto.AppLimitResponse;
+import com.scrolldoom.dto.AutoLockResponse;
 import com.scrolldoom.dto.BlockAppRequest;
 import com.scrolldoom.dto.CreateLimitRequest;
 import com.scrolldoom.dto.LimitStatusResponse;
@@ -215,6 +216,100 @@ public class AppLimitService {
         if (limit != null) {
             limit.setLockedUntil(null);
             appLimitRepository.save(limit);
+        }
+    }
+
+    public AutoLockResponse autoLockIfThresholdReached(ObjectId userId, String packageName) {
+        AppLimit limit = appLimitRepository.findByUserIdAndPackageName(userId, packageName)
+                .orElseThrow(() -> new ResourceNotFoundException("App limit not found for this package"));
+
+        if (limit.getBreachThreshold() <= 0) {
+            log.info("Auto-lockout disabled for packageName={} (breachThreshold={})", packageName, limit.getBreachThreshold());
+            return AutoLockResponse.builder()
+                    .locked(false)
+                    .message("Auto-lockout is disabled for this app")
+                    .build();
+        }
+
+        Date todayStart = getStartOfDay(new Date());
+        Date todayEnd = getEndOfDay(new Date());
+
+        long todayBreaches = breachEventRepository
+                .findByUserIdAndPackageNameAndBreachedAtBetween(userId, packageName, todayStart, todayEnd)
+                .stream()
+                .filter(e -> BreachEvent.BREACH_SCREEN_TIME.equals(e.getBreachType()))
+                .count();
+
+        if (todayBreaches < limit.getBreachThreshold()) {
+            int remaining = limit.getBreachThreshold() - (int) todayBreaches;
+            log.info("Threshold not reached for packageName={}: {}/{} breaches", packageName, todayBreaches, limit.getBreachThreshold());
+            return AutoLockResponse.builder()
+                    .locked(false)
+                    .message(String.format("Threshold not reached (%d/%d breaches, %d remaining)",
+                            todayBreaches, limit.getBreachThreshold(), remaining))
+                    .build();
+        }
+
+        BlockedApp existing = blockedAppRepository.findByUserIdAndPackageName(userId, packageName)
+                .orElse(null);
+        if (existing != null) {
+            log.info("App already locked for packageName={}, blockedBy={}", packageName, existing.getBlockedBy());
+            return AutoLockResponse.builder()
+                    .locked(true)
+                    .blockedApp(existing)
+                    .message("App is already locked")
+                    .build();
+        }
+
+        Date endOfDay = getEndOfDay(new Date());
+
+        BlockedApp blocked = BlockedApp.builder()
+                .userId(userId)
+                .packageName(packageName)
+                .appLabel(limit.getAppLabel())
+                .blockedAt(new Date())
+                .blockedBy("auto")
+                .expiresAt(endOfDay)
+                .breachCount((int) todayBreaches)
+                .lastBreachAt(new Date())
+                .build();
+        blockedAppRepository.save(blocked);
+
+        limit.setLockedUntil(endOfDay);
+        appLimitRepository.save(limit);
+
+        log.info("Auto-locked app {} for user {} after {} breaches", packageName, userId, todayBreaches);
+
+        notifyPartnerAboutAutoLock(userId, limit.getAppLabel());
+
+        return AutoLockResponse.builder()
+                .locked(true)
+                .blockedApp(blocked)
+                .message("App auto-locked after exceeding breach threshold")
+                .build();
+    }
+
+    private void notifyPartnerAboutAutoLock(ObjectId userId, String appLabel) {
+        try {
+            Partnership partnership = partnershipRepository.findActivePartnership(userId).orElse(null);
+            if (partnership == null) return;
+
+            ObjectId partnerId = partnership.getSenderUserId().equals(userId)
+                    ? partnership.getReceiverUserId()
+                    : partnership.getSenderUserId();
+
+            User partner = userRepository.findById(partnerId).orElse(null);
+            User me = userRepository.findById(userId).orElse(null);
+            if (partner == null || me == null) return;
+            if (partner.getFcmToken() == null || partner.getFcmToken().isBlank()) return;
+
+            notificationService.sendBreachNotification(
+                    partner.getFcmToken(), partner.getFirebaseUid(),
+                    "App Locked",
+                    String.format("%s is locked out of %s for the rest of the day",
+                            me.getDisplayName(), appLabel));
+        } catch (Exception e) {
+            log.error("Failed to notify partner about auto-lock for userId={}: {}", userId, e.getMessage(), e);
         }
     }
 
